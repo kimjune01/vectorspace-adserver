@@ -41,7 +41,8 @@ export interface BudgetInfo {
 export interface Stats {
   auction_count: number;
   total_spend: number;
-  cloudx_revenue: number;
+  publisher_revenue: number;
+  exchange_revenue: number;
 }
 
 export interface ChatMessage {
@@ -52,6 +53,6 @@ export interface ChatMessage {
 export interface PrebuiltConversation {
   label: string;
   vertical: string;
-  variant: "generic" | "specific";
+  variant: "generic" | "specific" | "no-ad";
   messages: ChatMessage[];
 }

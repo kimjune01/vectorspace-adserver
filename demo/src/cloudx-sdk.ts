@@ -52,19 +52,16 @@ export interface AdResponse {
   eligible_count: number;
 }
 
-const INTENT_PROMPT = `Given a conversation, describe what kind of professional service would help this person — as a single natural sentence in the style an advertiser would use to describe their own practice.
+const INTENT_PROMPT = `Given a conversation, decide whether the person could benefit from a professional service. If yes, write a single sentence describing that service — as if the provider were writing their own position statement. If the conversation is casual, off-topic, or doesn't suggest any professional need, respond with exactly "NONE".
 
-Focus on the service, its value proposition, and who it serves. Do NOT extract demographics or personal data about the user.
+Rules:
+- Match the most obvious need. A health complaint needs a health provider, not a lawyer. A legal issue needs legal help, not a therapist.
+- Write in third person as a service description: "[Role] providing/helping/specializing in [what they do]"
+- Be specific to the situation but don't embellish beyond what's stated.
+- Do NOT extract demographics or personal data about the user.
+- If there is no clear professional need, respond with "NONE".
 
-Examples:
-- "Licensed physical therapist specializing in sports injury rehabilitation for climbers with finger pulley strains"
-- "Family law attorney helping parents navigate custody arrangements and mediation during divorce proceedings"
-- "Certified financial planner guiding first-time investors through retirement planning and portfolio diversification"
-- "Reading specialist providing structured literacy tutoring for elementary students with learning differences"
-- "Full-stack development consultancy helping early-stage startups build and ship their MVP"
-- "Certified dog behaviorist working with reactive and fearful rescue dogs through desensitization programs"
-
-Respond with ONLY the service description sentence, nothing else.`;
+Respond with ONLY the one-sentence service description or "NONE", nothing else.`;
 
 export class CloudX {
   private endpoint: string;
@@ -100,6 +97,7 @@ export class CloudX {
     tau?: number
   ): Promise<AdResponse | null> {
     const intent = await this.extractIntent(messages);
+    if (intent === "NONE") return null;
     return this.requestAd({ intent, tau });
   }
 

@@ -8,9 +8,9 @@ interface PrebuiltMenuProps {
 
 export function PrebuiltMenu({ onSelect, onReset }: PrebuiltMenuProps) {
   return (
-    <div style={styles.container}>
+    <div className="flex gap-2 items-center">
       <select
-        style={styles.select}
+        className="px-2.5 py-1.5 rounded-md border border-slate-300 text-[13px] bg-white cursor-pointer"
         onChange={(e) => {
           const idx = parseInt(e.target.value);
           if (idx >= 0) onSelect(prebuiltConversations[idx]);
@@ -27,33 +27,12 @@ export function PrebuiltMenu({ onSelect, onReset }: PrebuiltMenuProps) {
           </option>
         ))}
       </select>
-      <button style={styles.resetBtn} onClick={onReset}>
+      <button
+        className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-[13px] cursor-pointer"
+        onClick={onReset}
+      >
         Reset
       </button>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: "flex",
-    gap: "8px",
-    alignItems: "center",
-  },
-  select: {
-    padding: "6px 10px",
-    borderRadius: "6px",
-    border: "1px solid #cbd5e1",
-    fontSize: "13px",
-    background: "white",
-    cursor: "pointer",
-  },
-  resetBtn: {
-    padding: "6px 12px",
-    borderRadius: "6px",
-    border: "1px solid #cbd5e1",
-    background: "white",
-    fontSize: "13px",
-    cursor: "pointer",
-  },
-};

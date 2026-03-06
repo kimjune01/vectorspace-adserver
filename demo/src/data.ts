@@ -213,6 +213,50 @@ export const prebuiltConversations: PrebuiltConversation[] = [
       },
     ],
   },
+
+  // No-ad conversations (too vague or off-topic for any advertiser)
+  {
+    label: "No Ad: Casual Chat",
+    vertical: "None",
+    variant: "no-ad",
+    messages: [
+      { role: "user", content: "what's the best movie you've seen lately" },
+      {
+        role: "assistant",
+        content:
+          "I don't watch movies, but I hear Dune Part Two was great. What genres do you usually go for?",
+      },
+      { role: "user", content: "mostly sci-fi and horror. anything with practical effects" },
+    ],
+  },
+  {
+    label: "No Ad: Recipe Question",
+    vertical: "None",
+    variant: "no-ad",
+    messages: [
+      { role: "user", content: "how long do I bake chicken thighs at 400" },
+      {
+        role: "assistant",
+        content:
+          "About 35-45 minutes depending on size. Use a meat thermometer — you want 165°F internal.",
+      },
+      { role: "user", content: "should I cover them with foil or leave them uncovered" },
+    ],
+  },
+  {
+    label: "No Ad: Travel Trivia",
+    vertical: "None",
+    variant: "no-ad",
+    messages: [
+      { role: "user", content: "what's the tallest building in the world right now" },
+      {
+        role: "assistant",
+        content:
+          "The Burj Khalifa in Dubai at 828 meters. Jeddah Tower was supposed to surpass it but construction stalled.",
+      },
+      { role: "user", content: "have you ever been to dubai" },
+    ],
+  },
 ];
 
 export const API_BASE = "http://localhost:8080";

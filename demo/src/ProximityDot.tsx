@@ -1,17 +1,24 @@
+import { useTheme } from "./ThemeContext";
+
 interface ProximityDotProps {
   brightness: number; // 0 to 1
   onClick: () => void;
   hasResult: boolean;
+  expanded?: boolean;
 }
 
 export function ProximityDot({
   brightness,
   onClick,
   hasResult,
+  expanded,
 }: ProximityDotProps) {
-  if (!hasResult) return null;
+  const theme = useTheme();
+  if (!hasResult && brightness <= 0) return null;
 
-  const amber = `rgba(245, 158, 11, ${0.4 + brightness * 0.6})`;
+  const alpha = 0.4 + brightness * 0.6;
+  const dotColor = theme.colors.dotActive.replace("VAR", String(alpha));
+  const glowColor = theme.colors.dotActive.replace("VAR", String(alpha * 0.5));
   const glowSize = 4 + brightness * 16;
 
   return (
@@ -19,15 +26,18 @@ export function ProximityDot({
       onClick={onClick}
       title="View auction details"
       style={{
-        width: 28,
-        height: 28,
+        width: 6,
+        height: 6,
         borderRadius: "50%",
         border: "none",
-        background: amber,
-        boxShadow: `0 0 ${glowSize}px ${glowSize / 2}px ${amber}`,
+        background: dotColor,
+        boxShadow: `0 0 ${glowSize}px ${glowSize / 2}px ${glowColor}`,
         cursor: "pointer",
-        transition: "all 0.3s ease",
         flexShrink: 0,
+        animation: expanded
+          ? "proximity-pulse-expanded 2s ease-in-out infinite"
+          : "proximity-pulse 2s ease-in-out infinite",
+        transition: "transform 0.3s ease",
       }}
     />
   );

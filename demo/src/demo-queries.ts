@@ -1,123 +1,137 @@
 /**
- * Demo queries per publisher — designed to showcase the tau narrative:
+ * Demo queries per publisher — multi-turn conversations that deepen naturally.
  *
- * Without tau: high-bidding generalists win, ads feel irrelevant.
- * With tau: only contextually relevant ads pass, UX stays clean, revenue still flows.
+ * Each conversation starts vague and narrows toward a need the user never
+ * explicitly asks to solve. The dot does the work of connecting the need
+ * to nearby expertise — the user doesn't have to ask for help.
  */
 
-export interface DemoQuery {
-  intent: string;
-  /** What the audience should notice */
-  narrative: string;
+export interface DemoStep {
+  message: string;
+  /** Faked dot brightness (0 = invisible, 0.025 = barely there, 0.1 = faint, 0.45 = warm) */
+  brightness: number;
 }
 
 export interface PublisherDemo {
   publisherId: string;
   tau: number;
-  queries: DemoQuery[];
+  /** Off-topic opener (dot stays dark, demonstrates "UX stays clean") */
+  offTopic: string;
+  /** Multi-turn deepening conversation */
+  steps: DemoStep[];
 }
 
 export const publisherDemos: PublisherDemo[] = [
-  // --- Health (CodyMD, Doctronic, Counsel Health, August AI) ---
-  {
-    publisherId: "codymd",
-    tau: 0.8,
-    queries: [
-      { intent: "my lower back has been hurting for two weeks", narrative: "PT specialists surface, not financial advisors" },
-      { intent: "feeling anxious and can't sleep at night", narrative: "Mental health provider wins over high-bidding generalists" },
-      { intent: "I have a rash on my arm that won't go away", narrative: "Dermatology screening beats irrelevant verticals" },
-    ],
-  },
-  {
-    publisherId: "doctronic",
-    tau: 0.85,
-    queries: [
-      { intent: "I think I have a sinus infection", narrative: "Telehealth provider surfaces for primary care need" },
-      { intent: "my child has a fever and sore throat", narrative: "Healthcare ads, not tutoring or dog training" },
-    ],
-  },
-  {
-    publisherId: "counsel-health",
-    tau: 0.76,
-    queries: [
-      { intent: "I need to talk to someone about my depression", narrative: "Therapy provider wins — high-value, high-relevance" },
-      { intent: "should I see a doctor about this knee pain", narrative: "PT and telehealth compete, irrelevant verticals excluded" },
-    ],
-  },
-  {
-    publisherId: "august-ai",
-    tau: 0.85,
-    queries: [
-      { intent: "what foods help lower cholesterol", narrative: "Nutrition specialist surfaces for diet query" },
-      { intent: "how do I know if I pulled a muscle or tore something", narrative: "PT specialists — the right ad for the moment" },
-    ],
-  },
+  // --- Top 4 Warm Leads ---
 
-  // --- Legal (FreeLawChat, AskLegal) ---
+  // Chai AI: companion chat → user reveals anxiety/sleep issues
   {
-    publisherId: "freelawchat",
-    tau: 0.7,
-    queries: [
-      { intent: "my landlord is trying to evict me without notice", narrative: "Tenant rights attorney, not a financial advisor" },
-      { intent: "going through a divorce and need custody advice", narrative: "Family law specialist wins the relevant auction" },
-      { intent: "I was rear-ended and need to file an injury claim", narrative: "Personal injury attorney — highest value intent in the system" },
-    ],
-  },
-  {
-    publisherId: "asklegal",
-    tau: 0.75,
-    queries: [
-      { intent: "can my employer fire me for taking medical leave", narrative: "Employment rights attorney surfaces" },
-      { intent: "someone hit my parked car and drove away", narrative: "Injury law competes in the relevant pool" },
-    ],
-  },
-
-  // --- Finance (Piere, FlyFin, Origin) ---
-  {
-    publisherId: "piere",
-    tau: 0.8,
-    queries: [
-      { intent: "I want to start saving for retirement but don't know where to begin", narrative: "Retirement planning wins over unrelated verticals" },
-      { intent: "how do I pay off credit card debt faster", narrative: "Budgeting and savings tools — native to the conversation" },
-    ],
-  },
-  {
-    publisherId: "flyfin",
-    tau: 0.7,
-    queries: [
-      { intent: "what expenses can I deduct as a freelance designer", narrative: "Freelancer bookkeeping and tax services surface" },
-      { intent: "do I need to pay quarterly estimated taxes on 1099 income", narrative: "Tax specialist beats generalist financial advisors" },
-      { intent: "should I set up an LLC or stay sole proprietor", narrative: "Small business tax optimization — precise match" },
-    ],
-  },
-  {
-    publisherId: "origin",
-    tau: 0.85,
-    queries: [
-      { intent: "how should I invest my first ten thousand dollars", narrative: "Wealth management wins in a competitive finance auction" },
-      { intent: "what's the difference between a Roth IRA and traditional IRA", narrative: "Retirement planning — the right ad for someone planning their future" },
-    ],
-  },
-
-  // --- Education (Brainly) ---
-  {
-    publisherId: "brainly",
-    tau: 0.8,
-    queries: [
-      { intent: "my child needs a tutor for math class", narrative: "Math tutor surfaces — not a dog trainer" },
-      { intent: "how do I study for the SAT effectively", narrative: "Test prep specialist wins the education auction" },
-      { intent: "my child has ADHD and is falling behind in school", narrative: "ADHD learning specialist — the ad the parent actually needs" },
-    ],
-  },
-
-  // --- Developer (Phind) ---
-  {
-    publisherId: "phind",
+    publisherId: "chai",
     tau: 0.6,
-    queries: [
-      { intent: "how do I set up a CI pipeline for my monorepo", narrative: "CI platform ad — feels like a recommendation, not an ad" },
-      { intent: "how do I monitor my API for errors and latency", narrative: "Observability tool surfaces for a performance problem" },
-      { intent: "set up kubernetes deployment pipeline", narrative: "Cloud deployment — the highest CPM vertical in dev tools" },
+    offTopic: "tell me about your favorite season",
+    steps: [
+      { message: "I've been really stressed out lately with work", brightness: 0.025 },
+      { message: "I can't fall asleep most nights and it's getting worse", brightness: 0.1 },
+      { message: "I feel anxious all the time and I don't know how to make it stop", brightness: 0.45 },
+    ],
+  },
+
+  // Amp Code: dev tools → deployment/infra pain
+  {
+    publisherId: "amp",
+    tau: 0.55,
+    offTopic: "what's the best sci-fi movie of all time",
+    steps: [
+      { message: "I'm deploying a new service and the config is getting complicated", brightness: 0.025 },
+      { message: "our database keeps running out of connections under load", brightness: 0.1 },
+      { message: "we had two outages this week and I can't figure out where the bottleneck is", brightness: 0.45 },
+    ],
+  },
+
+  // Luzia: general assistant → money/tax worries
+  {
+    publisherId: "luzia",
+    tau: 0.6,
+    offTopic: "what's a good recipe for guacamole",
+    steps: [
+      { message: "I've been picking up extra gig work to make ends meet", brightness: 0.025 },
+      { message: "I have no idea how to keep track of all these different payments", brightness: 0.1 },
+      { message: "tax season is coming and I don't even know what I owe", brightness: 0.45 },
+    ],
+  },
+
+  // Kindroid: AI companion → loneliness/mental health
+  {
+    publisherId: "kindroid",
+    tau: 0.6,
+    offTopic: "if you could travel anywhere where would you go",
+    steps: [
+      { message: "I moved to a new city a few months ago and it's been rough", brightness: 0.025 },
+      { message: "I don't really have anyone here to hang out with", brightness: 0.1 },
+      { message: "some days I just sit in my apartment and feel like I'm losing it", brightness: 0.45 },
+    ],
+  },
+
+  // --- 6 New Targets ---
+
+  // Galen AI: health → cholesterol/diet concerns
+  {
+    publisherId: "galenai",
+    tau: 0.6,
+    offTopic: "what's the best way to stay hydrated",
+    steps: [
+      { message: "I just got my blood work back and a few things were flagged", brightness: 0.025 },
+      { message: "my cholesterol is higher than it should be for my age", brightness: 0.1 },
+      { message: "my doctor mentioned statins but I'd rather try changing my diet first", brightness: 0.45 },
+    ],
+  },
+
+  // Autonomous: finance → inheritance/estate planning
+  {
+    publisherId: "autonomous",
+    tau: 0.55,
+    offTopic: "what's a good book to read this weekend",
+    steps: [
+      { message: "my grandmother passed away and left me some money", brightness: 0.025 },
+      { message: "I've never dealt with this much money before and I don't know where to put it", brightness: 0.1 },
+      { message: "I'm worried about the tax implications and don't want to make a mistake", brightness: 0.45 },
+    ],
+  },
+
+
+  // Sonia: therapy → anger/relationship issues
+  {
+    publisherId: "sonia",
+    tau: 0.6,
+    offTopic: "do you have any tips for staying organized",
+    steps: [
+      { message: "I've been feeling really off for the past couple weeks", brightness: 0.025 },
+      { message: "I keep snapping at people I care about over small things", brightness: 0.1 },
+      { message: "I think I need to actually talk to someone about what's going on with me", brightness: 0.45 },
+    ],
+  },
+
+  // YouLearn: education → exam prep panic
+  {
+    publisherId: "youlearn",
+    tau: 0.6,
+    offTopic: "what's the most interesting fact you know",
+    steps: [
+      { message: "I have a big exam coming up next week and I'm not ready", brightness: 0.025 },
+      { message: "the professor's lectures don't make sense and the textbook is useless", brightness: 0.1 },
+      { message: "I've watched the recordings twice and I still can't explain the core concepts", brightness: 0.45 },
+    ],
+  },
+
+  // Alice: education → organic chemistry struggle
+  {
+    publisherId: "alice",
+    tau: 0.6,
+    offTopic: "what's a fun way to memorize things",
+    steps: [
+      { message: "I'm taking organic chemistry this semester and it's brutal", brightness: 0.025 },
+      { message: "the reaction mechanisms just don't click no matter how much I study", brightness: 0.1 },
+      { message: "my grade is dropping and I can't afford to fail this class", brightness: 0.45 },
     ],
   },
 ];

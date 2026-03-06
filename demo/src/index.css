@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
@@ -24,4 +26,14 @@ body {
 #root {
   width: 100%;
   height: 100vh;
+}
+
+@keyframes proximity-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.35); opacity: 1; }
+}
+
+@keyframes proximity-pulse-expanded {
+  0%, 100% { transform: scale(3); opacity: 0.85; }
+  50% { transform: scale(3.5); opacity: 1; }
 }

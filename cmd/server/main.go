@@ -17,53 +17,59 @@ var seedAdvertisers = []struct {
 	BidPrice float64
 	Budget   float64
 }{
-	// Physical Therapy
-	{"Peak PT", "Physical therapist helping runners and endurance athletes recover from sports injuries through targeted rehab programs", 0.50, 2.50, 500},
-	{"AllMotion PT", "Physical therapist treating back pain, posture problems, and general musculoskeletal issues through movement therapy and hands-on rehab", 0.80, 2.00, 500},
-	{"ClimbStrong Rehab", "Physical therapist specializing in finger, hand, and upper extremity injuries common among rock climbers and bouldering athletes", 0.40, 3.00, 500},
-	{"NeuroMove PT", "Physical therapist helping stroke survivors and traumatic brain injury patients regain movement through neurological rehabilitation", 0.45, 2.75, 500},
+	// Mental Health & Therapy
+	{"BetterHelp", "Online therapy platform matching individuals with licensed therapists for weekly video sessions covering anxiety, relationships, and emotional regulation", 0.50, 20.00, 3000},
+	{"Headspace", "Meditation and mindfulness app with guided sessions for stress relief, better sleep, and daily anxiety management", 0.45, 12.00, 2000},
+	{"Talkiatry", "Online psychiatry practice offering medication management and therapy for people dealing with anxiety, depression, and adjustment disorders", 0.40, 22.00, 3000},
+	{"Cerebral", "Online mental health platform providing therapy and medication management for people ready to address persistent mood and behavioral issues", 0.45, 20.00, 3000},
 
-	// Health & Medical (for CodyMD, Doctronic, Counsel Health, August AI demos)
-	{"QuickClinic", "Online doctor providing telehealth visits, prescriptions, and urgent care consultations for patients who need medical attention fast", 0.80, 3.50, 600},
-	{"MindBridge Therapy", "Licensed therapist offering CBT and counseling sessions to adults struggling with anxiety, depression, and insomnia", 0.50, 4.00, 600},
-	{"DermCheck AI", "Dermatology screening tool that helps people identify skin rashes, suspicious moles, and other skin conditions from photos", 0.40, 3.75, 600},
-	{"NutriPlan Pro", "Registered dietitian creating personalized meal plans and nutrition guidance for people managing cholesterol, diabetes, or weight loss", 0.45, 2.25, 500},
+	// Sleep & Wellness
+	{"DriftOff Sleep", "Sleep improvement program combining CBT-I techniques and guided relaxation to help people with insomnia fall asleep naturally", 0.50, 14.00, 2000},
+	{"Calm", "Wellness app offering sleep stories, breathing exercises, and relaxation techniques for people who can't turn their mind off at night", 0.45, 10.00, 2000},
 
-	// Tutoring & Education (for Brainly demo)
-	{"BrightMinds Tutoring", "Academic tutor helping K-12 students improve grades in math, science, reading, and other school subjects through one-on-one lessons", 0.80, 1.50, 400},
-	{"ADHD Learning Lab", "Academic tutor and executive function coach helping students with ADHD develop study habits, focus, and organizational skills", 0.40, 2.50, 400},
-	{"MathPro Academy", "Math tutor preparing ambitious students for advanced coursework, math olympiad, and competition-level problem solving", 0.45, 2.00, 400},
-	{"CollegeReady Prep", "Test prep tutor helping high school students raise SAT and ACT scores and build strong college applications", 0.50, 2.25, 400},
+	// Social & Connection
+	{"Bumble BFF", "Friend-finding feature helping people who just moved to a new city meet locals with shared interests and hobbies", 0.80, 8.00, 1500},
+	{"Supportiv", "Peer support chat platform connecting people feeling isolated or overwhelmed to moderated small-group conversations in real time", 0.50, 10.00, 1500},
 
-	// Financial Advisory (for Piere, Origin demos)
-	{"WealthPath Advisors", "Financial advisor helping individuals build retirement savings through diversified portfolio planning and long-term investment strategy", 0.80, 3.00, 600},
-	{"SeedFund Capital", "Venture capital firm providing seed funding, pitch coaching, and investor introductions for early-stage startup founders", 0.40, 5.00, 600},
-	{"TaxSmart CPA", "CPA firm helping small business owners minimize tax liability through strategic planning, deductions, and compliance", 0.50, 3.50, 600},
-	{"EstateGuard Planning", "Estate planning attorney helping families set up trusts, wills, and wealth transfer strategies for generational inheritance", 0.45, 4.00, 600},
+	// Relationships & Couples
+	{"Regain", "Online couples and relationship counseling helping people who are having conflicts with partners, family, or close relationships", 0.50, 18.00, 2500},
+	{"Lasting", "Marriage and relationship health app with guided exercises for couples working through communication problems and emotional distance", 0.45, 12.00, 2000},
 
-	// Personal Finance & Budgeting (for Piere, FlyFin demos)
-	{"SaveSmart", "Personal finance app that automates savings, tracks spending, and helps people pay off credit card debt and build emergency funds", 0.80, 2.00, 400},
-	{"FreelanceBooks", "Bookkeeper helping freelancers and 1099 contractors track expenses, maximize tax deductions, and file quarterly estimated taxes", 0.40, 3.50, 500},
-	{"InsureRight", "Insurance marketplace helping self-employed and gig workers find affordable health, liability, and business coverage", 0.50, 3.00, 500},
-	{"RetireEasy", "Retirement planning service helping self-employed individuals set up and optimize solo 401k and IRA accounts", 0.45, 2.75, 500},
+	// Nutrition & Health
+	{"NutriPlan Pro", "Registered dietitian creating personalized meal plans for people managing high cholesterol, heart disease risk, and weight through diet changes", 0.50, 14.00, 2000},
+	{"Noom", "Weight and metabolic health program combining dietary coaching with clinical guidance for people trying to avoid medication through lifestyle changes", 0.45, 15.00, 2500},
+	{"Lark Health", "AI health coach helping people lower cholesterol and manage chronic conditions through daily nutrition tracking and behavior change programs", 0.50, 16.00, 2500},
 
-	// Legal (for FreeLawChat, AskLegal demos)
-	{"RightsCounsel", "Attorney providing legal advice and representation to individuals dealing with civil rights violations, employment disputes, and consumer protection issues", 0.80, 5.00, 800},
-	{"FairRent Legal", "Tenant rights lawyer helping renters fight wrongful evictions, negotiate leases, and resolve disputes with landlords", 0.40, 6.00, 800},
-	{"DivorceNav", "Family law attorney guiding couples through uncontested divorce, custody agreements, and co-parenting mediation", 0.50, 5.50, 800},
-	{"InjuryPro Law", "Personal injury lawyer helping car accident and motorcycle crash victims file claims and negotiate insurance settlements", 0.45, 7.00, 800},
+	// Telehealth & Medical
+	{"Sesame Care", "Affordable telehealth platform connecting patients directly with doctors for prescriptions, lab reviews, and second opinions without insurance", 0.50, 16.00, 2500},
+	{"HeartScore", "Cardiovascular risk screening service that analyzes lab results and provides personalized heart health action plans with lifestyle recommendations", 0.40, 18.00, 2500},
 
-	// Developer Tools (for Phind demo)
-	{"CloudDeploy", "Cloud platform providing Kubernetes orchestration, serverless deployment, and infrastructure management for engineering teams", 0.80, 4.00, 700},
-	{"DevDB", "Managed database service offering PostgreSQL hosting, real-time replication, and automatic scaling for development teams", 0.40, 4.50, 700},
-	{"ShipFast CI", "CI/CD platform providing fast parallel builds, automated testing, and deployment pipelines optimized for monorepo codebases", 0.50, 3.50, 700},
-	{"APISentry", "Observability platform helping engineering teams detect API errors, debug latency issues, and monitor uptime in production", 0.45, 3.75, 700},
+	// Developer Tools
+	{"Datadog", "Observability platform helping engineering teams monitor infrastructure, detect outages, trace bottlenecks, and debug production incidents", 0.50, 18.00, 3000},
+	{"PlanetScale", "Managed database service with automatic connection pooling, branching, and horizontal scaling for teams hitting capacity limits", 0.45, 20.00, 3000},
+	{"Render", "Cloud platform providing zero-config deployment, autoscaling, and infrastructure management so developers ship without DevOps overhead", 0.50, 16.00, 3000},
+	{"LinearB", "Engineering intelligence platform helping teams identify deployment bottlenecks, reduce cycle time, and improve delivery velocity", 0.40, 14.00, 2500},
 
-	// Dog Training
-	{"GoodBoy Basics", "Dog trainer teaching basic obedience commands, leash manners, and house training to new puppy and adult dog owners", 0.80, 1.00, 300},
-	{"Calm Canine Co", "Dog behaviorist helping owners of reactive, anxious, and fearful dogs through specialized desensitization and counter-conditioning programs", 0.40, 2.00, 300},
-	{"AgilityPaws", "Dog trainer coaching competitive handlers and their dogs in agility courses, rally obedience, and canine sport events", 0.45, 1.75, 300},
-	{"ServiceDog Academy", "Trainer certifying service dogs and therapy animals for individuals with disabilities, PTSD, and emotional support needs", 0.40, 2.50, 300},
+	// Tax & Bookkeeping
+	{"GigTax Pro", "Tax preparation service built for gig workers and 1099 contractors to track income, maximize deductions, and file quarterly estimated taxes", 0.50, 16.00, 2500},
+	{"Collective", "All-in-one back office for self-employed people handling bookkeeping, tax filing, and compliance so freelancers don't miss deductions", 0.50, 18.00, 2500},
+	{"Hurdlr", "Expense tracking app that automatically logs mileage, receipts, and business expenses for freelancers and side hustlers", 0.45, 12.00, 2000},
+
+	// Insurance
+	{"Stride Health", "Health insurance marketplace helping gig workers and freelancers find affordable coverage and track tax-deductible premiums", 0.45, 14.00, 2500},
+	{"Haven Life", "Term life insurance provider helping people protect their family's financial future with affordable, no-exam coverage", 0.45, 14.00, 2500},
+
+	// Estate & Legal
+	{"Trust & Will", "Online estate planning platform helping people create wills, trusts, and beneficiary designations without expensive attorney fees", 0.50, 16.00, 3000},
+	{"EstateGuard", "Estate planning attorney helping families set up trusts, manage inheritance, and minimize estate taxes after a loved one passes", 0.50, 22.00, 4000},
+	{"TaxSmith CPA", "CPA firm specializing in inheritance tax, estate settlements, and tax-efficient wealth transfer for families receiving a sudden windfall", 0.45, 18.00, 3000},
+
+	// Tutoring & Education
+	{"Wyzant", "Online tutoring marketplace connecting students with expert tutors for one-on-one help with difficult college courses and exam preparation", 0.50, 12.00, 2000},
+	{"Varsity Tutors", "Live online tutoring connecting struggling students with subject-matter experts for personalized help in chemistry, biology, and other STEM courses", 0.50, 14.00, 2000},
+	{"Chegg Study", "On-demand tutoring service providing step-by-step homework help and live explanations for students stuck on course material", 0.50, 10.00, 1500},
+	{"Kaplan", "Test preparation service offering structured study plans, practice exams, and expert instruction for students facing high-stakes academic tests", 0.45, 14.00, 2000},
+	{"Brainscape", "Spaced-repetition flashcard app helping students master difficult subjects through adaptive daily review optimized for long-term retention", 0.45, 8.00, 1500},
 }
 
 func main() {

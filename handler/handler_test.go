@@ -513,3 +513,96 @@ func TestAdRequestMethodNotAllowed(t *testing.T) {
 		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
+
+func TestStatsReset(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	// Run an auction to generate stats
+	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	adW := httptest.NewRecorder()
+	router.ServeHTTP(adW, adReq)
+	if adW.Code != http.StatusOK {
+		t.Fatalf("ad-request failed: %d", adW.Code)
+	}
+
+	// Verify stats are non-zero
+	req := httptest.NewRequest("GET", "/stats", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var stats map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&stats)
+	if count, _ := stats["auction_count"].(float64); count != 1 {
+		t.Fatalf("pre-reset auction_count = %v, want 1", stats["auction_count"])
+	}
+
+	// Reset stats
+	req = httptest.NewRequest("DELETE", "/stats", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE /stats status = %d, want 204", w.Code)
+	}
+
+	// Verify stats are zeroed
+	req = httptest.NewRequest("GET", "/stats", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	json.NewDecoder(w.Body).Decode(&stats)
+	if count, _ := stats["auction_count"].(float64); count != 0 {
+		t.Errorf("post-reset auction_count = %v, want 0", stats["auction_count"])
+	}
+	if spend, _ := stats["total_spend"].(float64); spend != 0 {
+		t.Errorf("post-reset total_spend = %v, want 0", stats["total_spend"])
+	}
+}
+
+func TestStatsMethodNotAllowed(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("POST", "/stats", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestAdRequestRevenueDistribution(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	// Register 2 advertisers so VCG payment < bid_price (creates exchange revenue)
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 5.0, 1000.0)
+	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
+
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ad-request status = %d", w.Code)
+	}
+
+	// Check stats: publisher_revenue + exchange_revenue = total_spend
+	req = httptest.NewRequest("GET", "/stats", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var stats map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&stats)
+
+	totalSpend, _ := stats["total_spend"].(float64)
+	pubRevenue, _ := stats["publisher_revenue"].(float64)
+	exchRevenue, _ := stats["exchange_revenue"].(float64)
+
+	if totalSpend <= 0 {
+		t.Errorf("total_spend = %v, want > 0", totalSpend)
+	}
+	if pubRevenue <= 0 {
+		t.Errorf("publisher_revenue = %v, want > 0", pubRevenue)
+	}
+	// publisher + exchange should sum to total spend
+	sum := pubRevenue + exchRevenue
+	if diff := totalSpend - sum; diff > 0.01 || diff < -0.01 {
+		t.Errorf("publisher(%.4f) + exchange(%.4f) = %.4f, want %.4f", pubRevenue, exchRevenue, sum, totalSpend)
+	}
+}

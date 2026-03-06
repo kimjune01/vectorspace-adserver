@@ -233,8 +233,13 @@ func TestAuctionLoggingAndStats(t *testing.T) {
 	if math.Abs(s.TotalSpend-expectedSpend) > 0.001 {
 		t.Errorf("TotalSpend = %f, want %f", s.TotalSpend, expectedSpend)
 	}
-	if s.CloudXRevenue != s.TotalSpend {
-		t.Errorf("CloudXRevenue = %f, want %f (same as TotalSpend)", s.CloudXRevenue, s.TotalSpend)
+	expectedExchange := expectedSpend * 0.15
+	expectedPublisher := expectedSpend - expectedExchange
+	if math.Abs(s.ExchangeRevenue-expectedExchange) > 0.001 {
+		t.Errorf("ExchangeRevenue = %f, want %f", s.ExchangeRevenue, expectedExchange)
+	}
+	if math.Abs(s.PublisherRevenue-expectedPublisher) > 0.001 {
+		t.Errorf("PublisherRevenue = %f, want %f", s.PublisherRevenue, expectedPublisher)
 	}
 }
 

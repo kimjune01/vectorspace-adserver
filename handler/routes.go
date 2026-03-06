@@ -76,17 +76,24 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	if cfg.DB != nil {
 		db := cfg.DB
 		mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet {
+			switch r.Method {
+			case http.MethodGet:
+				stats, err := db.GetStats()
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(stats)
+			case http.MethodDelete:
+				if err := db.ResetStats(); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
 			}
-			stats, err := db.GetStats()
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(stats)
 		})
 	}
 

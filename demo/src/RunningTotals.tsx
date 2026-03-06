@@ -19,44 +19,44 @@ export function RunningTotals() {
     return () => clearInterval(interval);
   }, []);
 
-  const s = stats ?? { auction_count: 0, total_spend: 0, cloudx_revenue: 0 };
+  const s = {
+    auction_count: 0,
+    total_spend: 0,
+    publisher_revenue: 0,
+    exchange_revenue: 0,
+    ...stats,
+  };
+
+  const reset = async () => {
+    try {
+      await fetch(`${API_BASE}/stats`, { method: "DELETE" });
+      setStats({ auction_count: 0, total_spend: 0, publisher_revenue: 0, exchange_revenue: 0 });
+    } catch {
+      // ignore
+    }
+  };
 
   return (
-    <div style={styles.container}>
+    <div className="flex items-center gap-4">
+      <button
+        onClick={reset}
+        className="bg-transparent border border-slate-300 rounded-md cursor-pointer text-base text-slate-500 px-2 py-1 leading-none"
+        title="Reset stats"
+      >
+        ↺
+      </button>
       <Stat label="Auctions" value={s.auction_count.toString()} />
-      <Stat label="Spend" value={`$${s.total_spend.toFixed(2)}`} />
-      <Stat label="Revenue" value={`$${s.cloudx_revenue.toFixed(2)}`} />
+      <Stat label="Publisher" value={`$${s.publisher_revenue.toFixed(2)}`} />
+      <Stat label="Exchange" value={`$${s.exchange_revenue.toFixed(2)}`} />
     </div>
   );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={styles.stat}>
-      <div style={styles.statValue}>{value}</div>
-      <div style={styles.statLabel}>{label}</div>
+    <div className="text-center">
+      <div className="text-base font-bold font-mono text-[var(--theme-text)]">{value}</div>
+      <div className="text-[11px] text-[var(--theme-text-muted)] uppercase tracking-wide">{label}</div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: "flex",
-    gap: "16px",
-  },
-  stat: {
-    textAlign: "center",
-  },
-  statValue: {
-    fontSize: "16px",
-    fontWeight: 700,
-    fontFamily: "monospace",
-    color: "#1e293b",
-  },
-  statLabel: {
-    fontSize: "11px",
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-};

@@ -246,10 +246,13 @@ func (db *DB) LogAuction(intent, winnerID string, payment float64, currency stri
 
 // Stats holds aggregate auction statistics.
 type Stats struct {
-	AuctionCount  int     `json:"auction_count"`
-	TotalSpend    float64 `json:"total_spend"`
-	CloudXRevenue float64 `json:"cloudx_revenue"`
+	AuctionCount     int     `json:"auction_count"`
+	TotalSpend       float64 `json:"total_spend"`
+	PublisherRevenue float64 `json:"publisher_revenue"`
+	ExchangeRevenue  float64 `json:"exchange_revenue"`
 }
+
+const exchangeCut = 0.15
 
 // GetStats returns aggregate auction statistics.
 func (db *DB) GetStats() (*Stats, error) {
@@ -260,9 +263,15 @@ func (db *DB) GetStats() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get stats: %w", err)
 	}
-	// CloudX revenue is the total spend (VCG payments go to the platform)
-	s.CloudXRevenue = s.TotalSpend
+	s.ExchangeRevenue = s.TotalSpend * exchangeCut
+	s.PublisherRevenue = s.TotalSpend - s.ExchangeRevenue
 	return &s, nil
+}
+
+// ResetStats deletes all auction log entries.
+func (db *DB) ResetStats() error {
+	_, err := db.conn.Exec(`DELETE FROM auctions`)
+	return err
 }
 
 // NextID returns the next advertiser ID based on current max.
