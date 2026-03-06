@@ -186,7 +186,7 @@ func setupDemoRouter(t *testing.T, sidecarURL string) http.Handler {
 	}
 
 	for _, s := range demoSeedAdvertisers {
-		pos, err := registry.RegisterWithBudget(s.Name, s.Intent, s.Sigma, s.BidPrice, s.Budget, "USD")
+		pos, err := registry.RegisterWithBudget(s.Name, s.Intent, s.Sigma, s.BidPrice, s.Budget, "USD", "")
 		if err != nil {
 			t.Fatalf("seed %s: %v", s.Name, err)
 		}

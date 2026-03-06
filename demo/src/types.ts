@@ -8,9 +8,11 @@ export interface BidderDetail {
   score: number;
   distance_sq: number;
   log_bid: number;
+  click_url?: string;
 }
 
 export interface AuctionResult {
+  auction_id: number;
   intent: string;
   winner: BidderDetail | null;
   runner_up: BidderDetail | null;

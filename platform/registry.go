@@ -1,7 +1,11 @@
 package platform
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
+	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -15,6 +19,7 @@ type Position struct {
 	Sigma     float64   `json:"sigma"`
 	BidPrice  float64   `json:"bid_price"`
 	Currency  string    `json:"currency"`
+	URL       string    `json:"url"`
 }
 
 // PositionRegistry stores advertiser positions with thread-safe access.
@@ -25,6 +30,9 @@ type PositionRegistry struct {
 	nextID    atomic.Int64
 	Embedder  *Embedder
 	db        *DB
+
+	// Cached embedding version hash; invalidated on mutation.
+	embeddingsVersion string
 }
 
 func NewPositionRegistry(embedder *Embedder) *PositionRegistry {
@@ -48,6 +56,7 @@ func (r *PositionRegistry) SetDB(db *DB) error {
 	for _, p := range positions {
 		r.positions[p.ID] = p
 	}
+	r.invalidateVersion()
 
 	// Set nextID to max existing ID + 1
 	nextID, err := db.NextID()
@@ -59,7 +68,7 @@ func (r *PositionRegistry) SetDB(db *DB) error {
 }
 
 // Register adds a new advertiser position. It calls the sidecar to embed the intent text.
-func (r *PositionRegistry) Register(name, intent string, sigma, bidPrice float64, currency string) (*Position, error) {
+func (r *PositionRegistry) Register(name, intent string, sigma, bidPrice float64, currency, url string) (*Position, error) {
 	embedding, err := r.Embedder.Embed(intent)
 	if err != nil {
 		return nil, fmt.Errorf("embed intent: %w", err)
@@ -75,18 +84,20 @@ func (r *PositionRegistry) Register(name, intent string, sigma, bidPrice float64
 		Sigma:     sigma,
 		BidPrice:  bidPrice,
 		Currency:  currency,
+		URL:       url,
 	}
 
 	r.mu.Lock()
 	r.positions[id] = pos
+	r.invalidateVersion()
 	r.mu.Unlock()
 
 	return pos, nil
 }
 
 // RegisterWithBudget registers and persists to DB with budget.
-func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPrice, budget float64, currency string) (*Position, error) {
-	pos, err := r.Register(name, intent, sigma, bidPrice, currency)
+func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPrice, budget float64, currency, url string) (*Position, error) {
+	pos, err := r.Register(name, intent, sigma, bidPrice, currency, url)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +112,7 @@ func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPri
 }
 
 // Update modifies an existing advertiser. Re-embeds if intent changed.
-func (r *PositionRegistry) Update(id, name, intent string, sigma, bidPrice float64) (*Position, error) {
+func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice float64) (*Position, error) {
 	r.mu.RLock()
 	existing := r.positions[id]
 	r.mu.RUnlock()
@@ -131,6 +142,9 @@ func (r *PositionRegistry) Update(id, name, intent string, sigma, bidPrice float
 	if bidPrice == 0 {
 		bidPrice = existing.BidPrice
 	}
+	if url == "" {
+		url = existing.URL
+	}
 
 	updated := &Position{
 		ID:        id,
@@ -140,14 +154,16 @@ func (r *PositionRegistry) Update(id, name, intent string, sigma, bidPrice float
 		Sigma:     sigma,
 		BidPrice:  bidPrice,
 		Currency:  existing.Currency,
+		URL:       url,
 	}
 
 	r.mu.Lock()
 	r.positions[id] = updated
+	r.invalidateVersion()
 	r.mu.Unlock()
 
 	if r.db != nil {
-		if err := r.db.UpdateAdvertiser(id, name, intent, embedding, sigma, bidPrice); err != nil {
+		if err := r.db.UpdateAdvertiser(id, name, intent, embedding, sigma, bidPrice, url); err != nil {
 			return nil, fmt.Errorf("persist update: %w", err)
 		}
 	}
@@ -164,6 +180,7 @@ func (r *PositionRegistry) Delete(id string) error {
 		return fmt.Errorf("advertiser %s not found", id)
 	}
 	delete(r.positions, id)
+	r.invalidateVersion()
 	r.mu.Unlock()
 
 	if r.db != nil {
@@ -192,4 +209,51 @@ func (r *PositionRegistry) GetAll() []*Position {
 		result = append(result, p)
 	}
 	return result
+}
+
+// EmbeddingsVersion returns a short hex hash of all position IDs + embeddings.
+// The value is cached and invalidated whenever positions are mutated.
+func (r *PositionRegistry) EmbeddingsVersion() string {
+	r.mu.RLock()
+	if v := r.embeddingsVersion; v != "" {
+		r.mu.RUnlock()
+		return v
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Double-check after acquiring write lock.
+	if r.embeddingsVersion != "" {
+		return r.embeddingsVersion
+	}
+
+	r.embeddingsVersion = r.computeVersion()
+	return r.embeddingsVersion
+}
+
+// invalidateVersion must be called with mu held (write lock).
+func (r *PositionRegistry) invalidateVersion() {
+	r.embeddingsVersion = ""
+}
+
+func (r *PositionRegistry) computeVersion() string {
+	// Sort IDs for deterministic output.
+	ids := make([]string, 0, len(r.positions))
+	for id := range r.positions {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	h := sha256.New()
+	buf := make([]byte, 8)
+	for _, id := range ids {
+		h.Write([]byte(id))
+		for _, v := range r.positions[id].Embedding {
+			binary.LittleEndian.PutUint64(buf, math.Float64bits(v))
+			h.Write(buf)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)[:16]) // 32 hex chars
 }

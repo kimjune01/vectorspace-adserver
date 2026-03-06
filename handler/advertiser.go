@@ -14,6 +14,7 @@ type registerRequest struct {
 	BidPrice float64 `json:"bid_price"`
 	Budget   float64 `json:"budget"`
 	Currency string  `json:"currency"`
+	URL      string  `json:"url"`
 }
 
 type updateRequest struct {
@@ -22,6 +23,7 @@ type updateRequest struct {
 	Sigma    float64 `json:"sigma"`
 	BidPrice float64 `json:"bid_price"`
 	Budget   float64 `json:"budget"`
+	URL      string  `json:"url"`
 }
 
 type AdvertiserHandler struct {
@@ -67,16 +69,32 @@ func (h *AdvertiserHandler) HandleRegister(w http.ResponseWriter, r *http.Reques
 		req.Currency = "USD"
 	}
 
-	pos, err := h.Registry.RegisterWithBudget(req.Name, req.Intent, req.Sigma, req.BidPrice, req.Budget, req.Currency)
+	pos, err := h.Registry.RegisterWithBudget(req.Name, req.Intent, req.Sigma, req.BidPrice, req.Budget, req.Currency, req.URL)
 	if err != nil {
 		http.Error(w, "registration failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	h.Budgets.Set(pos.ID, req.Budget, pos.Currency)
 
+	// Generate access token if DB is available
+	resp := map[string]interface{}{
+		"id":        pos.ID,
+		"name":      pos.Name,
+		"intent":    pos.Intent,
+		"sigma":     pos.Sigma,
+		"bid_price": pos.BidPrice,
+		"currency":  pos.Currency,
+		"url":       pos.URL,
+	}
+	if h.DB != nil {
+		if token, err := h.DB.GenerateToken(pos.ID); err == nil {
+			resp["token"] = token
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(pos)
+	json.NewEncoder(w).Encode(resp)
 }
 
 // HandlePositions handles GET /positions
@@ -139,7 +157,7 @@ func (h *AdvertiserHandler) handleUpdate(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	pos, err := h.Registry.Update(id, req.Name, req.Intent, req.Sigma, req.BidPrice)
+	pos, err := h.Registry.Update(id, req.Name, req.Intent, req.URL, req.Sigma, req.BidPrice)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

@@ -95,7 +95,7 @@ func TestRegisterWithBudgetPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pos, err := registry.RegisterWithBudget("Test Adv", "test intent", 0.5, 2.0, 500.0, "USD")
+	pos, err := registry.RegisterWithBudget("Test Adv", "test intent", 0.5, 2.0, 500.0, "USD", "")
 	if err != nil {
 		t.Fatalf("RegisterWithBudget: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestRegistryUpdateNameOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pos, err := registry.RegisterWithBudget("Original", "test intent", 0.5, 2.0, 100.0, "USD")
+	pos, err := registry.RegisterWithBudget("Original", "test intent", 0.5, 2.0, 100.0, "USD", "")
 	if err != nil {
 		t.Fatalf("RegisterWithBudget: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRegistryUpdateNameOnly(t *testing.T) {
 	copy(origEmb, pos.Embedding)
 
 	// Update name only (empty intent = keep existing)
-	updated, err := registry.Update(pos.ID, "New Name", "", 0, 0)
+	updated, err := registry.Update(pos.ID, "New Name", "", "", 0, 0)
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -183,13 +183,13 @@ func TestRegistryUpdateIntentReembeds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pos, err := registry.RegisterWithBudget("Adv", "original intent", 0.5, 2.0, 100.0, "USD")
+	pos, err := registry.RegisterWithBudget("Adv", "original intent", 0.5, 2.0, 100.0, "USD", "")
 	if err != nil {
 		t.Fatalf("RegisterWithBudget: %v", err)
 	}
 
 	// Update with new intent — should trigger re-embed
-	updated, err := registry.Update(pos.ID, "", "new intent", 0, 0)
+	updated, err := registry.Update(pos.ID, "", "new intent", "", 0, 0)
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestRegistryDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pos, err := registry.RegisterWithBudget("ToDelete", "delete me", 0.5, 2.0, 100.0, "USD")
+	pos, err := registry.RegisterWithBudget("ToDelete", "delete me", 0.5, 2.0, 100.0, "USD", "")
 	if err != nil {
 		t.Fatalf("RegisterWithBudget: %v", err)
 	}

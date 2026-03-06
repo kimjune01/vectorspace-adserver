@@ -63,6 +63,7 @@ var seedAdvertisers = []struct {
 	{"Trust & Will", "Online estate planning platform helping people create wills, trusts, and beneficiary designations without expensive attorney fees", 0.50, 16.00, 3000},
 	{"EstateGuard", "Estate planning attorney helping families set up trusts, manage inheritance, and minimize estate taxes after a loved one passes", 0.50, 22.00, 4000},
 	{"TaxSmith CPA", "CPA firm specializing in inheritance tax, estate settlements, and tax-efficient wealth transfer for families receiving a sudden windfall", 0.45, 18.00, 3000},
+	{"AI Lawyer", "AI legal assistant helping people draft contracts, review agreements, conduct legal research, and summarize legal documents without expensive attorney fees", 0.50, 16.00, 3000},
 
 	// Tutoring & Education
 	{"Wyzant", "Online tutoring marketplace connecting students with expert tutors for one-on-one help with difficult college courses and exam preparation", 0.50, 12.00, 2000},
@@ -77,11 +78,22 @@ func main() {
 	dbPath := flag.String("db-path", "", "Path to SQLite database (empty = in-memory only)")
 	seed := flag.Bool("seed", false, "Seed default advertisers on startup (only if DB is empty)")
 	anthropicKey := flag.String("anthropic-key", "", "Anthropic API key for /chat proxy")
+	freqCapMax := flag.Int("freq-cap-max", 3, "Max impressions per advertiser per user per window")
+	freqCapWindow := flag.Int("freq-cap-window", 60, "Frequency cap window in minutes")
+	adminPassword := flag.String("admin-password", "", "Password for admin endpoints (empty = no auth)")
 	flag.Parse()
 
 	// Try env var for API key if flag not set
 	if *anthropicKey == "" {
 		*anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+
+	// Try env var for admin password if flag not set
+	if *adminPassword == "" {
+		*adminPassword = os.Getenv("ADMIN_PASSWORD")
+	}
+	if *adminPassword == "" {
+		log.Println("WARNING: --admin-password not set, admin endpoints are unprotected")
 	}
 
 	embedder := platform.NewEmbedder(*sidecarURL)
@@ -117,7 +129,7 @@ func main() {
 		if len(existing) == 0 {
 			log.Printf("Seeding %d default advertisers...", len(seedAdvertisers))
 			for _, s := range seedAdvertisers {
-				pos, err := registry.RegisterWithBudget(s.Name, s.Intent, s.Sigma, s.BidPrice, s.Budget, "USD")
+				pos, err := registry.RegisterWithBudget(s.Name, s.Intent, s.Sigma, s.BidPrice, s.Budget, "USD", "")
 				if err != nil {
 					log.Printf("WARN: failed to seed %s: %v", s.Name, err)
 					continue
@@ -132,11 +144,14 @@ func main() {
 	}
 
 	router := handler.NewRouter(handler.RouterConfig{
-		Registry:     registry,
-		Budgets:      budgets,
-		Engine:       engine,
-		DB:           db,
-		AnthropicKey: *anthropicKey,
+		Registry:      registry,
+		Budgets:       budgets,
+		Engine:        engine,
+		DB:            db,
+		AnthropicKey:  *anthropicKey,
+		FreqCapMax:    *freqCapMax,
+		FreqCapWindow: *freqCapWindow,
+		AdminPassword: *adminPassword,
 	})
 
 	log.Printf("CloudX Ad Server starting on :8080 (sidecar: %s)", *sidecarURL)

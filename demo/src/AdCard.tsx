@@ -1,10 +1,14 @@
 import { useState } from "react";
 import type { AuctionResult } from "./types";
+import { CloudX } from "./cloudx-sdk";
+import { API_BASE } from "./data";
 
 interface AdCardProps {
   result: AuctionResult;
   onClose: () => void;
 }
+
+const cloudx = new CloudX({ endpoint: API_BASE });
 
 export function AdCard({ result, onClose }: AdCardProps) {
   const [showSummary, setShowSummary] = useState(false);
@@ -63,7 +67,16 @@ function FakeAd({
         </p>
         <button
           className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold cursor-pointer border-none"
-          onClick={onClose}
+          onClick={() => {
+            const clickURL = winner.click_url;
+            if (clickURL) {
+              window.open(clickURL, "_blank", "noopener");
+            }
+            cloudx
+              .reportClick(result.auction_id, winner.id)
+              .catch(() => {});
+            onClose();
+          }}
         >
           Learn More
         </button>

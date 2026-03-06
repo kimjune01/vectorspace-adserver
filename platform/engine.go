@@ -4,6 +4,7 @@ import (
 	"cloudx-adserver/auction"
 	"fmt"
 	"math"
+	"net/url"
 )
 
 // BidderDetail contains scoring details for a single bidder in the auction.
@@ -17,10 +18,12 @@ type BidderDetail struct {
 	Score      float64 `json:"score"`
 	DistanceSq float64 `json:"distance_sq"`
 	LogBid     float64 `json:"log_bid"`
+	ClickURL   string  `json:"click_url,omitempty"`
 }
 
 // RichAdResponse is the enriched response returned to publishers.
 type RichAdResponse struct {
+	AuctionID     int64          `json:"auction_id"`
 	Intent        string         `json:"intent"`
 	Winner        *BidderDetail  `json:"winner"`
 	RunnerUp      *BidderDetail  `json:"runner_up,omitempty"`
@@ -32,7 +35,7 @@ type RichAdResponse struct {
 }
 
 // AuctionEngine orchestrates the full ad-request flow:
-// registry → budget filter → auction → VCG payment → charge
+// registry → budget filter → auction → VCG payment → log (charge happens on click)
 type AuctionEngine struct {
 	Registry *PositionRegistry
 	Budgets  *BudgetTracker
@@ -58,6 +61,11 @@ func (e *AuctionEngine) RunAdRequest(intent string) (*RichAdResponse, error) {
 // threshold tau. Only ads whose squared distance to the query falls below tau are
 // eligible. If tau <= 0, all ads pass (no filtering).
 func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAdResponse, error) {
+	return e.RunAdRequestFull(intent, tau, "")
+}
+
+// RunAdRequestFull processes an ad request with optional tau and publisher_id.
+func (e *AuctionEngine) RunAdRequestFull(intent string, tau float64, publisherID string) (*RichAdResponse, error) {
 	queryEmbedding, err := e.Embedder.Embed(intent)
 	if err != nil {
 		return nil, fmt.Errorf("embed query intent: %w", err)
@@ -68,10 +76,14 @@ func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAd
 		return nil, fmt.Errorf("no registered advertisers")
 	}
 
-	// Build index of position intents for the response
+	// Build index of position intents and URLs for the response
 	positionIntents := make(map[string]string, len(positions))
+	positionURLs := make(map[string]string)
 	for _, pos := range positions {
 		positionIntents[pos.ID] = pos.Intent
+		if pos.URL != "" {
+			positionURLs[pos.ID] = pos.URL
+		}
 	}
 
 	// Build bids from positions that can afford their bid price
@@ -118,19 +130,24 @@ func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAd
 		return nil, fmt.Errorf("auction produced no winner")
 	}
 
-	// Compute VCG payment
+	// Compute VCG payment (charged on click, not here)
 	payment := auction.ComputeVCGPayment(result, queryEmbedding)
 
 	winnerID := result.Winner.ID
 
-	// Charge the winner
-	if !e.Budgets.Charge(winnerID, payment) {
-		return nil, fmt.Errorf("failed to charge winner %s", winnerID)
-	}
-
 	// Log auction to DB
+	var auctionID int64
 	if e.DB != nil {
-		e.DB.LogAuction(intent, winnerID, payment, result.Winner.Currency, bidCount)
+		var err error
+		if publisherID != "" {
+			auctionID, err = e.DB.LogAuctionReturningIDWithPublisher(intent, winnerID, payment, result.Winner.Currency, bidCount, publisherID)
+		} else {
+			auctionID, err = e.DB.LogAuctionReturningID(intent, winnerID, payment, result.Winner.Currency, bidCount)
+		}
+		if err != nil {
+			// Fallback to non-returning version
+			e.DB.LogAuction(intent, winnerID, payment, result.Winner.Currency, bidCount)
+		}
 	}
 
 	// Build bidder details from scored bids
@@ -153,6 +170,9 @@ func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAd
 	var winnerDetail *BidderDetail
 	if len(allBidders) > 0 {
 		winnerDetail = &allBidders[0]
+		if baseURL, ok := positionURLs[winnerDetail.ID]; ok {
+			winnerDetail.ClickURL = buildClickURL(baseURL, publisherID, winnerDetail.ID, auctionID, intent)
+		}
 	}
 	var runnerUpDetail *BidderDetail
 	if len(allBidders) > 1 {
@@ -160,6 +180,7 @@ func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAd
 	}
 
 	return &RichAdResponse{
+		AuctionID:     auctionID,
 		Intent:        intent,
 		Winner:        winnerDetail,
 		RunnerUp:      runnerUpDetail,
@@ -169,4 +190,20 @@ func (e *AuctionEngine) RunAdRequestWithTau(intent string, tau float64) (*RichAd
 		BidCount:      bidCount,
 		EligibleCount: len(result.EligibleBids),
 	}, nil
+}
+
+// buildClickURL appends UTM params to an advertiser's base URL for click tracking.
+func buildClickURL(baseURL, publisherID, advertiserID string, auctionID int64, intent string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL
+	}
+	q := u.Query()
+	q.Set("utm_source", publisherID)
+	q.Set("utm_medium", "cpc")
+	q.Set("utm_campaign", advertiserID)
+	q.Set("utm_content", fmt.Sprintf("%d", auctionID))
+	q.Set("utm_term", intent)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
