@@ -38,6 +38,7 @@ export function Overview() {
           <Link to="/admin/auctions" className="text-blue-600 hover:underline">Auction Log</Link>
           <Link to="/admin/advertisers" className="text-blue-600 hover:underline">Advertisers</Link>
           <Link to="/admin/publishers" className="text-blue-600 hover:underline">Publishers</Link>
+          <Link to="/explore" className="text-blue-600 hover:underline">Explore</Link>
           <button onClick={() => { adminLogout(); navigate('/admin/login'); }} className="text-slate-500 hover:text-slate-700">Log out</button>
         </div>
       </div>

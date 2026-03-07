@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { simulateAuction } from '../api';
 import { StatCard } from '../components/StatCard';
 import type { SimulationResult } from '../types';
@@ -33,7 +34,10 @@ export function Explore() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-2">Position Explorer</h1>
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-2xl font-bold">Position Explorer</h1>
+        <Link to="/admin" className="text-sm text-blue-600 hover:underline">Admin Dashboard</Link>
+      </div>
       <p className="text-slate-500 text-sm mb-6">
         Enter a user intent to simulate an auction and see how advertisers rank.
       </p>
