@@ -2,6 +2,7 @@ package handler
 
 import (
 	"cloudx-adserver/platform"
+	"cloudx-adserver/tee"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -23,7 +24,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Password")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -46,18 +47,42 @@ func (w *statusWriter) WriteHeader(code int) {
 
 // RouterConfig contains all dependencies for the router.
 type RouterConfig struct {
-	Registry     *platform.PositionRegistry
-	Budgets      *platform.BudgetTracker
-	Engine       *platform.AuctionEngine
-	DB           *platform.DB
-	AnthropicKey string
+	Registry      *platform.PositionRegistry
+	Budgets       *platform.BudgetTracker
+	Engine        *platform.AuctionEngine
+	DB            *platform.DB
+	AnthropicKey  string
+	FreqCapMax    int
+	FreqCapWindow int
+	AdminPassword string
+	TEEProxy      tee.TEEProxyInterface
+}
+
+// adminAuthMiddleware checks the X-Admin-Password header. If password is empty, all requests pass through (dev mode).
+func adminAuthMiddleware(password string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if password != "" && r.Header.Get("X-Admin-Password") != password {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // NewRouter wires all routes and returns an http.Handler.
 func NewRouter(cfg RouterConfig) http.Handler {
 	advHandler := &AdvertiserHandler{Registry: cfg.Registry, Budgets: cfg.Budgets, DB: cfg.DB}
-	pubHandler := &PublisherHandler{Engine: cfg.Engine}
+	pubHandler := &PublisherHandler{Engine: cfg.Engine, DB: cfg.DB}
 	chatHandler := &ChatHandler{APIKey: cfg.AnthropicKey}
+
+	freqCapMax := cfg.FreqCapMax
+	if freqCapMax <= 0 {
+		freqCapMax = 3
+	}
+	freqCapWindow := cfg.FreqCapWindow
+	if freqCapWindow <= 0 {
+		freqCapWindow = 60
+	}
 
 	mux := http.NewServeMux()
 
@@ -71,7 +96,58 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.HandleFunc("/positions", advHandler.HandlePositions)
 	mux.HandleFunc("/budget/", advHandler.HandleBudget)
 	mux.HandleFunc("/ad-request", pubHandler.HandleAdRequest)
+	mux.HandleFunc("/ad-claim", pubHandler.HandleAdClaim)
+	mux.HandleFunc("/embeddings", pubHandler.HandleEmbeddings)
+	mux.HandleFunc("/embed", pubHandler.HandleEmbed)
 	mux.HandleFunc("/chat", chatHandler.HandleChat)
+
+	// Publisher registration (admin-protected)
+	if cfg.DB != nil {
+		mux.HandleFunc("/publisher/register", adminAuthMiddleware(cfg.AdminPassword, pubHandler.HandleRegisterPublisher))
+	}
+
+	// Event tracking endpoints
+	if cfg.DB != nil {
+		eventHandler := &EventHandler{DB: cfg.DB, Budgets: cfg.Budgets, FreqCapMax: freqCapMax, FreqCapWindow: freqCapWindow}
+		mux.HandleFunc("/event/impression", eventHandler.HandleImpression)
+		mux.HandleFunc("/event/click", eventHandler.HandleClick)
+		mux.HandleFunc("/event/viewable", eventHandler.HandleViewable)
+
+		// Portal endpoints (token-authenticated)
+		portalHandler := &PortalHandler{Registry: cfg.Registry, Budgets: cfg.Budgets, DB: cfg.DB}
+		mux.HandleFunc("/portal/me", portalHandler.HandlePortalMe)
+		mux.HandleFunc("/portal/me/auctions", portalHandler.HandlePortalAuctions)
+		mux.HandleFunc("/portal/me/events", portalHandler.HandlePortalEvents)
+
+		// Publisher portal endpoints
+		pubPortalHandler := &PublisherPortalHandler{DB: cfg.DB}
+		mux.HandleFunc("/portal/publisher/me", pubPortalHandler.HandlePublisherMe)
+		mux.HandleFunc("/portal/publisher/stats", pubPortalHandler.HandlePublisherStats)
+		mux.HandleFunc("/portal/publisher/revenue", pubPortalHandler.HandlePublisherRevenue)
+		mux.HandleFunc("/portal/publisher/events", pubPortalHandler.HandlePublisherEvents)
+		mux.HandleFunc("/portal/publisher/auctions", pubPortalHandler.HandlePublisherAuctions)
+		mux.HandleFunc("/portal/publisher/top-advertisers", pubPortalHandler.HandlePublisherTopAdvertisers)
+
+		// Admin endpoints (password-protected)
+		mux.HandleFunc("/admin/auctions", adminAuthMiddleware(cfg.AdminPassword, portalHandler.HandleAdminAuctions))
+		mux.HandleFunc("/admin/revenue", adminAuthMiddleware(cfg.AdminPassword, portalHandler.HandleAdminRevenue))
+		mux.HandleFunc("/admin/top-advertisers", adminAuthMiddleware(cfg.AdminPassword, portalHandler.HandleAdminTopAdvertisers))
+		mux.HandleFunc("/admin/advertisers", adminAuthMiddleware(cfg.AdminPassword, portalHandler.HandleAdminAdvertisers))
+		mux.HandleFunc("/admin/events", adminAuthMiddleware(cfg.AdminPassword, portalHandler.HandleAdminEvents))
+		mux.HandleFunc("/admin/publishers", adminAuthMiddleware(cfg.AdminPassword, func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				portalHandler.HandleAdminPublishers(w, r)
+			case http.MethodPost:
+				pubHandler.HandleCreatePublisherWithCredentials(w, r)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		}))
+
+		// Publisher login (public)
+		mux.HandleFunc("/publisher/login", pubHandler.HandlePublisherLogin)
+	}
 
 	if cfg.DB != nil {
 		db := cfg.DB
@@ -95,6 +171,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
+	}
+
+	// TEE endpoints (only when proxy is configured)
+	if cfg.TEEProxy != nil {
+		teeHandler := &TEEHandler{Proxy: cfg.TEEProxy, DB: cfg.DB, Engine: cfg.Engine}
+		mux.HandleFunc("/tee/attestation", teeHandler.HandleAttestation)
+		mux.HandleFunc("/ad-request-private", teeHandler.HandleAdRequestPrivate)
 	}
 
 	return corsMiddleware(loggingMiddleware(mux))

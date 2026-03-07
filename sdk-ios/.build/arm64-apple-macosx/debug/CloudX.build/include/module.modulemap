@@ -1,0 +1,3 @@
+module CloudX {
+    header "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudX.build/include/CloudX-Swift.h"
+}

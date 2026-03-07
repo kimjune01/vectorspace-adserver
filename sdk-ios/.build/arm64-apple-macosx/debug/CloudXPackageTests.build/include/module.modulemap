@@ -1,0 +1,3 @@
+module CloudXPackageTests {
+    header "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXPackageTests.build/include/CloudXPackageTests-Swift.h"
+}

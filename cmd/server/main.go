@@ -3,6 +3,7 @@ package main
 import (
 	"cloudx-adserver/handler"
 	"cloudx-adserver/platform"
+	"cloudx-adserver/tee"
 	"flag"
 	"log"
 	"net/http"
@@ -81,6 +82,10 @@ func main() {
 	freqCapMax := flag.Int("freq-cap-max", 3, "Max impressions per advertiser per user per window")
 	freqCapWindow := flag.Int("freq-cap-window", 60, "Frequency cap window in minutes")
 	adminPassword := flag.String("admin-password", "", "Password for admin endpoints (empty = no auth)")
+	teeEnabled := flag.Bool("tee", false, "Enable real TEE mode (requires Nitro Enclave running)")
+	teeMock := flag.Bool("tee-mock", false, "Enable mock TEE mode (local dev, no EC2 needed)")
+	teeCID := flag.Int("tee-cid", 16, "Enclave CID for vsock")
+	teePort := flag.Int("tee-port", 5000, "Enclave vsock port")
 	flag.Parse()
 
 	// Try env var for API key if flag not set
@@ -143,6 +148,24 @@ func main() {
 		}
 	}
 
+	// TEE proxy setup
+	var teeProxy tee.TEEProxyInterface
+	if *teeMock {
+		mockProxy, err := tee.NewMockTEEProxy()
+		if err != nil {
+			log.Fatalf("Failed to create mock TEE proxy: %v", err)
+		}
+		tee.SyncFromPlatform(mockProxy, registry, budgets)
+		teeProxy = mockProxy
+		log.Println("TEE mock mode enabled (in-process auction)")
+	} else if *teeEnabled {
+		realProxy := tee.NewTEEProxy(uint32(*teeCID), uint32(*teePort), registry, budgets)
+		realProxy.Start()
+		defer realProxy.Stop()
+		teeProxy = realProxy
+		log.Printf("TEE mode enabled (CID=%d, port=%d)", *teeCID, *teePort)
+	}
+
 	router := handler.NewRouter(handler.RouterConfig{
 		Registry:      registry,
 		Budgets:       budgets,
@@ -152,6 +175,7 @@ func main() {
 		FreqCapMax:    *freqCapMax,
 		FreqCapWindow: *freqCapWindow,
 		AdminPassword: *adminPassword,
+		TEEProxy:      teeProxy,
 	})
 
 	log.Printf("CloudX Ad Server starting on :8080 (sidecar: %s)", *sidecarURL)

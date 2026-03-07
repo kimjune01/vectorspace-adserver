@@ -1,4 +1,3 @@
-from cloudx.client import CloudXClient
-from cloudx.prompt import INTENT_PROMPT
+from .client import CloudX
 
-__all__ = ["CloudXClient", "INTENT_PROMPT"]
+__all__ = ["CloudX"]

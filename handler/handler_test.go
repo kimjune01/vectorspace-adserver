@@ -568,6 +568,158 @@ func TestStatsMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// --- /embeddings tests ---
+
+func TestEmbeddingsReturnsFormat(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	// Register an advertiser so there's at least one embedding
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
+
+	req := httptest.NewRequest("GET", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Version    string `json:"version"`
+		Embeddings []struct {
+			ID        string    `json:"id"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"embeddings"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Version == "" {
+		t.Error("expected non-empty version")
+	}
+	if len(resp.Embeddings) != 1 {
+		t.Fatalf("embeddings len = %d, want 1", len(resp.Embeddings))
+	}
+	if resp.Embeddings[0].ID == "" {
+		t.Error("expected non-empty embedding id")
+	}
+	if len(resp.Embeddings[0].Embedding) != 3 {
+		t.Errorf("embedding dim = %d, want 3", len(resp.Embeddings[0].Embedding))
+	}
+}
+
+func TestEmbeddingsETag(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
+
+	// First request: should return ETag
+	req := httptest.NewRequest("GET", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	etag := w.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header")
+	}
+
+	// Second request with If-None-Match: should return 304
+	req = httptest.NewRequest("GET", "/embeddings", nil)
+	req.Header.Set("If-None-Match", etag)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotModified {
+		t.Errorf("expected 304, got %d", w.Code)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body on 304, got %d bytes", w.Body.Len())
+	}
+}
+
+func TestEmbeddingsVersionChangesOnRegister(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
+
+	// Get initial version
+	req := httptest.NewRequest("GET", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	etag1 := w.Header().Get("ETag")
+
+	// Register another advertiser
+	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 100.0)
+
+	// Version should change
+	req = httptest.NewRequest("GET", "/embeddings", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	etag2 := w.Header().Get("ETag")
+
+	if etag1 == etag2 {
+		t.Error("ETag should change after registering a new advertiser")
+	}
+}
+
+func TestEmbeddingsMethodNotAllowed(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("POST", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+// --- /embed tests ---
+
+func TestEmbedReturnsVector(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	body, _ := json.Marshal(map[string]string{"text": "back pain from sitting"})
+	req := httptest.NewRequest("POST", "/embed", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Embedding []float64 `json:"embedding"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Embedding) != 3 {
+		t.Errorf("embedding dim = %d, want 3", len(resp.Embedding))
+	}
+}
+
+func TestEmbedMissingText(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	body, _ := json.Marshal(map[string]string{})
+	req := httptest.NewRequest("POST", "/embed", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestEmbedMethodNotAllowed(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("GET", "/embed", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
 func TestAdRequestRevenueDistribution(t *testing.T) {
 	router, _ := setupTestRouter(t)
 

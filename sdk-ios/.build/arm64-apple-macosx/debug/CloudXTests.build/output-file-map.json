@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/master.swiftdeps"
+  },
+  "/Users/junekim/Documents/cloudx-adserver/sdk-ios/Tests/CloudXTests/CloudXTests.swift": {
+    "dependencies": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/CloudXTests.d",
+    "object": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/CloudXTests.swift.o",
+    "swiftmodule": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/CloudXTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/CloudXTests.swiftdeps",
+    "diagnostics": "/Users/junekim/Documents/cloudx-adserver/sdk-ios/.build/arm64-apple-macosx/debug/CloudXTests.build/CloudXTests.dia"
+  }
+}

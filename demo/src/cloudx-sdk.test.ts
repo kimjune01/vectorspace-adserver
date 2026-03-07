@@ -4,7 +4,35 @@ import { setupServer } from "msw/node";
 import { CloudX } from "./cloudx-sdk";
 
 // Mock server
+let embeddingsCallCount = 0;
 const handlers = [
+  http.get("http://test-endpoint/embeddings", ({ request }) => {
+    embeddingsCallCount++;
+    const etag = '"abc123"';
+    const ifNoneMatch = request.headers.get("If-None-Match");
+    if (ifNoneMatch === etag) {
+      return new HttpResponse(null, { status: 304 });
+    }
+    return HttpResponse.json(
+      {
+        version: "abc123",
+        embeddings: [
+          { id: "adv-1", embedding: [0.1, 0.2, 0.3] },
+          { id: "adv-2", embedding: [0.9, 0.8, 0.7] },
+        ],
+      },
+      { headers: { ETag: etag } }
+    );
+  }),
+
+  http.post("http://test-endpoint/embed", async ({ request }) => {
+    const body = (await request.json()) as { text: string };
+    if (!body.text) {
+      return new HttpResponse("text is required", { status: 400 });
+    }
+    return HttpResponse.json({ embedding: [0.5, 0.5, 0.5] });
+  }),
+
   http.post("http://test-endpoint/chat", async ({ request }) => {
     const body = (await request.json()) as {
       messages: { role: string; content: string }[];
@@ -77,7 +105,10 @@ const handlers = [
 const server = setupServer(...handlers);
 
 beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  embeddingsCallCount = 0;
+});
 afterAll(() => server.close());
 
 const cloudx = new CloudX({ endpoint: "http://test-endpoint" });
@@ -139,6 +170,59 @@ describe("CloudX SDK", () => {
         { role: "user", content: "what's the best movie lately" },
       ]);
       expect(result).toBeNull();
+    });
+  });
+
+  describe("syncEmbeddings", () => {
+    it("fetches embeddings on first call", async () => {
+      await cloudx.syncEmbeddings();
+      expect(embeddingsCallCount).toBe(1);
+      // proximity should now work with cached data
+      const results = cloudx.proximity([0.1, 0.2, 0.3]);
+      expect(results.length).toBe(2);
+      expect(results[0].id).toBe("adv-1");
+    });
+
+    it("sends If-None-Match on subsequent calls", async () => {
+      await cloudx.syncEmbeddings(); // first call — gets ETag
+      await cloudx.syncEmbeddings(); // second call — sends If-None-Match → 304
+      expect(embeddingsCallCount).toBe(2);
+      // Cache should still work
+      const results = cloudx.proximity([0.1, 0.2, 0.3]);
+      expect(results.length).toBe(2);
+    });
+  });
+
+  describe("embed", () => {
+    it("returns an embedding vector", async () => {
+      const vec = await cloudx.embed("back pain from sitting");
+      expect(vec).toEqual([0.5, 0.5, 0.5]);
+    });
+  });
+
+  describe("proximity", () => {
+    it("returns empty array when cache is empty", () => {
+      const fresh = new CloudX({ endpoint: "http://test-endpoint" });
+      expect(fresh.proximity([0.5, 0.5, 0.5])).toEqual([]);
+    });
+
+    it("sorts by squared Euclidean distance ascending", async () => {
+      await cloudx.syncEmbeddings();
+      // adv-1 is at [0.1, 0.2, 0.3], adv-2 is at [0.9, 0.8, 0.7]
+      // query at [0.1, 0.2, 0.3] → distance to adv-1 = 0, to adv-2 = 0.64+0.36+0.16 = 1.16
+      const results = cloudx.proximity([0.1, 0.2, 0.3]);
+      expect(results[0].id).toBe("adv-1");
+      expect(results[0].distance).toBeCloseTo(0, 5);
+      expect(results[1].id).toBe("adv-2");
+      expect(results[1].distance).toBeCloseTo(1.16, 2);
+    });
+
+    it("returns closest advertiser first for a different query", async () => {
+      await cloudx.syncEmbeddings();
+      // query near adv-2 at [0.9, 0.8, 0.7]
+      const results = cloudx.proximity([0.9, 0.8, 0.7]);
+      expect(results[0].id).toBe("adv-2");
+      expect(results[0].distance).toBeCloseTo(0, 5);
     });
   });
 });

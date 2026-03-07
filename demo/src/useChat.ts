@@ -1,9 +1,17 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { ChatMessage, AuctionResult } from "./types";
 import { API_BASE } from "./data";
 import { CloudX } from "./cloudx-sdk";
 
 const cloudx = new CloudX({ endpoint: API_BASE });
+
+/**
+ * Convert squared Euclidean distance to a 0–1 brightness value.
+ * distance=0 → brightness=1, distance≥2 → brightness=0.
+ */
+function distanceToBrightness(distance: number): number {
+  return Math.max(0, Math.min(1, 1 - distance / 2));
+}
 
 function scoreToBrightness(score: number): number {
   return Math.min(1, Math.max(0, (score + 2) / 4));
@@ -21,6 +29,11 @@ export function useChat(initialTau?: number) {
   const tauRef = useRef(initialTau);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+
+  // Sync advertiser embeddings on mount (one GET, then 304s)
+  useEffect(() => {
+    cloudx.syncEmbeddings().catch(() => {});
+  }, []);
 
   const setTau = (newTau: number | undefined) => {
     tauRef.current = newTau;
@@ -45,8 +58,28 @@ export function useChat(initialTau?: number) {
     return data.content;
   };
 
+  /**
+   * Local proximity: extract intent → embed → compute distances locally.
+   * No auction, no money — just dot brightness.
+   */
+  const runLocalProximity = async (msgs: ChatMessage[]) => {
+    const intent = await cloudx.extractIntent(msgs);
+    if (intent === "NONE") {
+      clearProximity();
+      return;
+    }
+    const queryEmbedding = await cloudx.embed(intent);
+    const results = cloudx.proximity(queryEmbedding);
+    if (results.length > 0) {
+      setDotBrightness(distanceToBrightness(results[0].distance));
+    } else {
+      clearProximity();
+    }
+  };
+
+  /** Full auction — runs locally, exchange only learns winner + payment. */
   const runAdFromChat = async (msgs: ChatMessage[]) => {
-    const result = await cloudx.requestAdFromChat(msgs, tauRef.current);
+    const result = await cloudx.requestAdFromChatPrivate(msgs, tauRef.current);
     if (result) {
       setAuctionResult(result as AuctionResult);
       setDotBrightness(
@@ -55,6 +88,10 @@ export function useChat(initialTau?: number) {
     } else {
       clearAuction();
     }
+  };
+
+  const clearProximity = () => {
+    setDotBrightness(0);
   };
 
   const clearAuction = () => {
@@ -72,7 +109,7 @@ export function useChat(initialTau?: number) {
       try {
         const [botContent] = await Promise.all([
           callChat(newMessages),
-          runAdFromChat(newMessages).catch(() => clearAuction()),
+          runLocalProximity(newMessages).catch(() => clearProximity()),
         ]);
 
         const botMsg: ChatMessage = { role: "assistant", content: botContent };
@@ -120,35 +157,15 @@ export function useChat(initialTau?: number) {
     setIsLoading(true);
 
     try {
-      await runAdFromChat(msgs);
+      await runLocalProximity(msgs);
     } catch {
-      const lastUserMsg = [...msgs].reverse().find((m) => m.role === "user");
-      if (lastUserMsg) {
-        try {
-          await cloudx
-            .requestAd({ intent: lastUserMsg.content, tau: tauRef.current })
-            .then((result) => {
-              if (result) {
-                setAuctionResult(result as AuctionResult);
-                setDotBrightness(
-                  result.winner ? scoreToBrightness(result.winner.score) : 0
-                );
-              } else {
-                clearAuction();
-              }
-            });
-        } catch {
-          clearAuction();
-        }
-      } else {
-        clearAuction();
-      }
+      clearProximity();
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  /** Run the ad auction against current messages (for replay tap moment). */
+  /** Run the full ad auction against current messages (for replay tap moment). */
   const runAuction = useCallback(async () => {
     await runAdFromChat(messagesRef.current).catch(() => clearAuction());
   }, []);

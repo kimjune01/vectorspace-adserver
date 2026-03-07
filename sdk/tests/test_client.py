@@ -1,125 +1,132 @@
-"""Unit tests for the CloudX SDK client using a mock HTTP transport."""
+"""Tests for CloudX Python SDK."""
 
 import json
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from unittest import TestCase
 
-import httpx
-import pytest
-
-from cloudx import CloudXClient
-
-
-class MockTransport(httpx.BaseTransport):
-    """Records requests and returns canned responses."""
-
-    def __init__(self) -> None:
-        self.requests: list[tuple[str, str, dict]] = []
-        self.responses: dict[str, httpx.Response] = {}
-
-    def set_response(self, path: str, *, status: int = 200, body: dict | list) -> None:
-        self.responses[path] = httpx.Response(
-            status_code=status,
-            json=body,
-        )
-
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content) if request.content else {}
-        self.requests.append((request.method, request.url.raw_path.decode(), body))
-        path = request.url.raw_path.decode()
-        if path in self.responses:
-            return self.responses[path]
-        return httpx.Response(status_code=404, json={"error": "not found"})
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from cloudx.client import CloudX
 
 
-@pytest.fixture
-def mock_client():
-    transport = MockTransport()
-    transport.set_response(
-        "/ad-request",
-        status=200,
-        body={
-            "winner_id": "adv-1",
-            "winner_name": "Peak PT",
-            "payment": 1.42,
-            "currency": "USD",
-            "bid_count": 3,
-            "eligible_count": 2,
-        },
-    )
-    transport.set_response(
-        "/advertiser/register",
-        status=201,
-        body={
-            "id": "adv-1",
-            "name": "Peak PT",
-            "intent": "sports injury knee rehab for competitive athletes",
-            "sigma": 0.5,
-            "bid_price": 2.5,
-            "currency": "USD",
-        },
-    )
-    transport.set_response(
-        "/positions",
-        body=[
-            {"id": "adv-1", "name": "Peak PT", "intent": "knee rehab", "sigma": 0.5, "bid_price": 2.5},
-        ],
-    )
-    transport.set_response(
-        "/budget/adv-1",
-        body={"advertiser_id": "adv-1", "total": 100, "spent": 1.42, "remaining": 98.58, "currency": "USD"},
-    )
+class FakeHandler(BaseHTTPRequestHandler):
+    """Minimal mock server for SDK tests."""
 
-    client = CloudXClient("http://localhost:8080")
-    client._client = httpx.Client(transport=transport, base_url="http://localhost:8080")
-    yield client, transport
-    client.close()
+    etag = '"test-version-hash"'
 
+    def do_GET(self):
+        if self.path == "/embeddings":
+            inm = self.headers.get("If-None-Match")
+            if inm == self.etag:
+                self.send_response(304)
+                self.end_headers()
+                return
 
-def test_get_ad_sends_intent(mock_client):
-    client, transport = mock_client
-    result = client.get_ad("knee rehab for marathon runners")
+            body = json.dumps({
+                "version": "test-version-hash",
+                "embeddings": [
+                    {"id": "adv-1", "embedding": [0.1, 0.2, 0.3]},
+                    {"id": "adv-2", "embedding": [0.9, 0.8, 0.7]},
+                ],
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("ETag", self.etag)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
 
-    assert result["winner_id"] == "adv-1"
-    assert result["winner_name"] == "Peak PT"
-    method, path, body = transport.requests[-1]
-    assert method == "POST"
-    assert path == "/ad-request"
-    assert body == {"intent": "knee rehab for marathon runners"}
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+
+        if self.path == "/embed":
+            req = json.loads(raw) if raw else {}
+            if not req.get("text"):
+                self.send_error(400, "text is required")
+                return
+            body = json.dumps({"embedding": [0.5, 0.5, 0.5]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
+
+    def log_message(self, format, *args):
+        pass  # suppress logs
 
 
-def test_register_sends_intent_not_embedding(mock_client):
-    client, transport = mock_client
-    result = client.register(
-        name="Peak PT",
-        intent="sports injury knee rehab for competitive athletes",
-        sigma=0.5,
-        bid_price=2.5,
-        budget=100,
-    )
+class TestCloudX(TestCase):
+    server: HTTPServer
+    thread: threading.Thread
+    endpoint: str
 
-    assert result["id"] == "adv-1"
-    assert result["intent"] == "sports injury knee rehab for competitive athletes"
-    assert "embedding" not in result
+    @classmethod
+    def setUpClass(cls):
+        cls.server = HTTPServer(("127.0.0.1", 0), FakeHandler)
+        port = cls.server.server_address[1]
+        cls.endpoint = f"http://127.0.0.1:{port}"
+        cls.thread = threading.Thread(target=cls.server.serve_forever)
+        cls.thread.daemon = True
+        cls.thread.start()
 
-    _, _, body = transport.requests[-1]
-    assert body["intent"] == "sports injury knee rehab for competitive athletes"
-    assert "embedding" not in body
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
 
+    def new_client(self) -> CloudX:
+        return CloudX(self.endpoint)
 
-def test_positions_returns_intents(mock_client):
-    client, _ = mock_client
-    positions = client.positions()
-    assert len(positions) == 1
-    assert positions[0]["intent"] == "knee rehab"
-    assert "embedding" not in positions[0]
+    # ── sync_embeddings ──────────────────────────────────────────
 
+    def test_sync_embeddings_fetches(self):
+        c = self.new_client()
+        c.sync_embeddings()
+        results = c.proximity([0.1, 0.2, 0.3])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["id"], "adv-1")
 
-def test_budget_returns_info(mock_client):
-    client, _ = mock_client
-    info = client.budget("adv-1")
-    assert info["remaining"] == 98.58
+    def test_sync_embeddings_304_on_second_call(self):
+        c = self.new_client()
+        c.sync_embeddings()  # first → 200
+        c.sync_embeddings()  # second → 304 (no error)
+        # cache should still be intact
+        results = c.proximity([0.1, 0.2, 0.3])
+        self.assertEqual(len(results), 2)
 
+    # ── embed ────────────────────────────────────────────────────
 
-def test_context_manager():
-    transport = MockTransport()
-    with CloudXClient("http://localhost:8080") as client:
-        client._client = httpx.Client(transport=transport, base_url="http://localhost:8080")
+    def test_embed_returns_vector(self):
+        c = self.new_client()
+        vec = c.embed("back pain from sitting")
+        self.assertEqual(vec, [0.5, 0.5, 0.5])
+
+    # ── proximity ────────────────────────────────────────────────
+
+    def test_proximity_empty_cache(self):
+        c = self.new_client()
+        self.assertEqual(c.proximity([0.5, 0.5, 0.5]), [])
+
+    def test_proximity_sorts_ascending(self):
+        c = self.new_client()
+        c.sync_embeddings()
+        # adv-1 at [0.1, 0.2, 0.3], adv-2 at [0.9, 0.8, 0.7]
+        # query [0.1, 0.2, 0.3] → dist to adv-1 = 0, dist to adv-2 ≈ 1.16
+        results = c.proximity([0.1, 0.2, 0.3])
+        self.assertEqual(results[0]["id"], "adv-1")
+        self.assertAlmostEqual(results[0]["distance"], 0.0, places=5)
+        self.assertEqual(results[1]["id"], "adv-2")
+        self.assertAlmostEqual(results[1]["distance"], 1.16, places=2)
+
+    def test_proximity_closest_changes_with_query(self):
+        c = self.new_client()
+        c.sync_embeddings()
+        # query near adv-2
+        results = c.proximity([0.9, 0.8, 0.7])
+        self.assertEqual(results[0]["id"], "adv-2")
+        self.assertAlmostEqual(results[0]["distance"], 0.0, places=5)

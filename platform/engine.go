@@ -203,7 +203,9 @@ func buildClickURL(baseURL, publisherID, advertiserID string, auctionID int64, i
 	q.Set("utm_medium", "cpc")
 	q.Set("utm_campaign", advertiserID)
 	q.Set("utm_content", fmt.Sprintf("%d", auctionID))
-	q.Set("utm_term", intent)
+	if intent != "[private]" {
+		q.Set("utm_term", intent)
+	}
 	u.RawQuery = q.Encode()
 	return u.String()
 }

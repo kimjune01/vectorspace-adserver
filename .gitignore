@@ -6,6 +6,12 @@ __pycache__/
 
 # Go
 *.db
+*.db-shm
+*.db-wal
+server
+
+# Recordings
+demo/recordings/
 
 # IDE
 .idea/
