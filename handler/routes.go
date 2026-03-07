@@ -99,6 +99,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.HandleFunc("/ad-claim", pubHandler.HandleAdClaim)
 	mux.HandleFunc("/embeddings", pubHandler.HandleEmbeddings)
 	mux.HandleFunc("/embed", pubHandler.HandleEmbed)
+	mux.HandleFunc("/simulate", pubHandler.HandleSimulate)
 	mux.HandleFunc("/chat", chatHandler.HandleChat)
 
 	// Publisher registration (admin-protected)

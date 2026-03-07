@@ -7,6 +7,7 @@ import { Overview } from './pages/admin/Overview';
 import { AuctionLog } from './pages/admin/AuctionLog';
 import { Advertisers } from './pages/admin/Advertisers';
 import { Publishers } from './pages/admin/Publishers';
+import { Explore } from './pages/Explore';
 import { NotFound } from './pages/NotFound';
 import { getAdminPassword } from './api';
 
@@ -20,6 +21,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 export function Router() {
   return (
     <Routes>
+      <Route path="/explore" element={<Explore />} />
       <Route path="/advertiser" element={<Dashboard />} />
       <Route path="/publisher" element={<PublisherDashboard />} />
       <Route path="/publisher/login" element={<PublisherLogin />} />

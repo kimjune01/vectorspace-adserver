@@ -73,3 +73,29 @@ export interface PublisherStats {
   total_revenue: number;
   currency: string;
 }
+
+export interface SimulationBidder {
+  id: string;
+  rank: number;
+  name: string;
+  intent: string;
+  bid_price: number;
+  sigma: number;
+  score: number;
+  distance_sq: number;
+  log_bid: number;
+}
+
+export interface TauBucket {
+  tau: number;
+  count: number;
+}
+
+export interface SimulationResult {
+  intent: string;
+  winner: SimulationBidder | null;
+  all_bidders: SimulationBidder[];
+  payment: number;
+  bid_count: number;
+  tau_thresholds: TauBucket[];
+}

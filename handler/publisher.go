@@ -298,6 +298,37 @@ func (h *PublisherHandler) HandleEmbed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleSimulate handles POST /simulate.
+// Runs a simulated auction with no logging or billing.
+func (h *PublisherHandler) HandleSimulate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Intent string `json:"intent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Intent == "" {
+		http.Error(w, "intent is required", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.Engine.SimulateAuction(req.Intent)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // HandleAdClaim handles POST /ad-claim.
 // Records a publisher-reported auction result for billing.
 // The SDK runs the auction locally; this endpoint only learns winner + payment.

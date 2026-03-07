@@ -720,6 +720,131 @@ func TestEmbedMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// --- /simulate tests ---
+
+func TestSimulateSuccess(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	// Register 2 advertisers
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
+
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp["winner"] == nil {
+		t.Error("expected winner in response")
+	}
+	if resp["all_bidders"] == nil {
+		t.Error("expected all_bidders array")
+	}
+	bidders, ok := resp["all_bidders"].([]interface{})
+	if !ok {
+		t.Fatal("expected all_bidders to be an array")
+	}
+	if len(bidders) != 2 {
+		t.Errorf("all_bidders len = %d, want 2", len(bidders))
+	}
+	if resp["tau_thresholds"] == nil {
+		t.Error("expected tau_thresholds in response")
+	}
+	thresholds, ok := resp["tau_thresholds"].([]interface{})
+	if !ok {
+		t.Fatal("expected tau_thresholds to be an array")
+	}
+	if len(thresholds) == 0 {
+		t.Error("expected non-empty tau_thresholds")
+	}
+}
+
+func TestSimulateDoesNotLog(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
+
+	// Simulate
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
+	}
+
+	// Check stats — should show 0 auctions
+	req = httptest.NewRequest("GET", "/stats", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var stats map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&stats)
+	if count, _ := stats["auction_count"].(float64); count != 0 {
+		t.Errorf("auction_count = %v, want 0 (simulate should not log)", count)
+	}
+}
+
+func TestSimulateIncludesBudgetExhausted(t *testing.T) {
+	router, _ := setupTestRouter(t)
+
+	// Register advertiser with tiny budget (0.01) — normally excluded from real auctions once spent
+	registerAdvertiser(t, router, "Broke", "intent", 0.5, 2.0, 0.01)
+	registerAdvertiser(t, router, "Rich", "intent", 0.5, 3.0, 1000.0)
+
+	// Run a real auction to exhaust Broke's budget
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Now simulate — Broke should still appear
+	body, _ = json.Marshal(map[string]interface{}{"intent": "query"})
+	req = httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	bidders, ok := resp["all_bidders"].([]interface{})
+	if !ok {
+		t.Fatal("expected all_bidders array")
+	}
+	if len(bidders) != 2 {
+		t.Errorf("all_bidders len = %d, want 2 (budget-exhausted advertiser should still appear)", len(bidders))
+	}
+}
+
+func TestSimulateMissingIntent(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	body, _ := json.Marshal(map[string]interface{}{})
+	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing intent, got %d", w.Code)
+	}
+}
+
+func TestSimulateNoAdvertisers(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
+	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 with no advertisers, got %d", w.Code)
+	}
+}
+
 func TestAdRequestRevenueDistribution(t *testing.T) {
 	router, _ := setupTestRouter(t)
 

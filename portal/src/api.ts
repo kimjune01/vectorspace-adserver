@@ -8,6 +8,7 @@ import type {
   PublisherInfo,
   PublisherProfile,
   PublisherStats,
+  SimulationResult,
 } from './types';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -216,6 +217,18 @@ export async function getPublisherTopAdvertisers(
   limit = 10
 ): Promise<AdvertiserSpend[]> {
   const resp = await fetch(`${API}/portal/publisher/top-advertisers?token=${token}&limit=${limit}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+// --- Simulation (public, no auth) ---
+
+export async function simulateAuction(intent: string): Promise<SimulationResult> {
+  const resp = await fetch(`${API}/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intent }),
+  });
   if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
 }
