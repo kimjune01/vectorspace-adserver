@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Rogendo/Mental-health-Chatbot",
+    "stack": "python-flask",
+    "why": "Full web stack, multilingual mental health chatbot, 200+ stars"
+  },
+  {
+    "name": "TalhaBruh/Mood-Therapy-ChatBot-in-NextJS-using-OpenAI",
+    "stack": "typescript-nextjs",
+    "why": "Modern NextJS + OpenAI, therapy chatbot"
+  },
+  {
+    "name": "AIAnytime/PubMed-Healthcare-Chatbot",
+    "stack": "python-langchain",
+    "why": "LangChain RAG chatbot over PubMed"
+  },
+  {
+    "name": "stutisehgal/RASA-Mental-Health-Chatbot",
+    "stack": "python-rasa",
+    "why": "RASA framework, structured conversation flow"
+  },
+  {
+    "name": "naman06dev/memory-chatbot",
+    "stack": "python-langchain",
+    "why": "LangChain therapy chatbot with memory"
+  },
+  {
+    "name": "opencodeiiita/Fem-care",
+    "stack": "typescript-python",
+    "why": "Women's health platform, frontend + backend"
+  }
+]

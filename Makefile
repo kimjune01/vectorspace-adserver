@@ -1,6 +1,6 @@
 # CloudX Ad Server — Build & Deploy
 
-.PHONY: dev staging prod test build-server build-portal build-landing clean deploy
+.PHONY: dev staging prod test build-server build-portal build-landing clean deploy test-skills test-skill grade-skill
 
 # ── Development ──────────────────────────────────────────────────
 
@@ -17,6 +17,15 @@ test: ## Run all Go tests
 
 test-portal: ## Type-check and build portal
 	cd portal && npx tsc --noEmit && npx vite build
+
+test-skills: ## Run all skill trials against cached repos
+	bash skill/test/run.sh --grade
+
+test-skill: ## Run one trial (REPO=owner/name SKILL=evaluate|install|verify)
+	bash skill/test/run.sh --repo $(REPO) --skill $(SKILL)
+
+grade-skill: ## Run one trial with grading (REPO=owner/name SKILL=evaluate|install|verify)
+	bash skill/test/run.sh --repo $(REPO) --skill $(SKILL) --grade
 
 # ── Build ────────────────────────────────────────────────────────
 
