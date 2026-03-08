@@ -47,8 +47,11 @@ func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if req.EncryptedEmbedding.AESKeyEncrypted == "" || req.EncryptedEmbedding.EncryptedPayload == "" {
-		http.Error(w, "encrypted_embedding fields are required", http.StatusBadRequest)
+	hasPlainEmbedding := len(req.Embedding) > 0
+	hasEncryptedEmbedding := req.EncryptedEmbedding.AESKeyEncrypted != "" && req.EncryptedEmbedding.EncryptedPayload != ""
+
+	if !hasPlainEmbedding && !hasEncryptedEmbedding {
+		http.Error(w, "either embedding or encrypted_embedding is required", http.StatusBadRequest)
 		return
 	}
 

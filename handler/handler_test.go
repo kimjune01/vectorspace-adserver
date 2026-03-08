@@ -395,6 +395,90 @@ func TestAdRequestMissingEncryptedEmbedding(t *testing.T) {
 	}
 }
 
+// plainEmbeddingAdRequest creates a plain-vector ad-request (no encryption).
+// It syncs positions/budgets to the proxy, then POSTs a raw embedding vector.
+func plainEmbeddingAdRequest(t *testing.T, router http.Handler, proxy *tee.MockTEEProxy, positions []enclave.PositionSnapshot, budgets []enclave.BudgetSnapshot, publisherID string) *httptest.ResponseRecorder {
+	t.Helper()
+	proxy.SyncPositions(positions)
+	proxy.SyncBudgets(budgets)
+
+	reqBody := map[string]interface{}{
+		"embedding": []float64{0.01, 0.02, 0.03},
+	}
+	if publisherID != "" {
+		reqBody["publisher_id"] = publisherID
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestAdRequestPlainEmbedding(t *testing.T) {
+	router, _, proxy := setupTestRouterWithProxy(t)
+
+	// Register 2 advertisers so we get a winner + runner-up
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
+
+	w := plainEmbeddingAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+			{ID: "adv-2", Name: "Adv2", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 3.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+			{AdvertiserID: "adv-2", Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"pub-1",
+	)
+	if w.Code != http.StatusOK {
+		t.Fatalf("plain embedding ad-request status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+
+	if resp["winner_id"] == nil || resp["winner_id"] == "" {
+		t.Error("expected winner_id in response")
+	}
+	if payment, ok := resp["payment"].(float64); !ok || payment <= 0 {
+		t.Errorf("payment = %v, want > 0", resp["payment"])
+	}
+	if resp["currency"] != "USD" {
+		t.Errorf("currency = %v, want USD", resp["currency"])
+	}
+	if resp["auction_id"] == nil {
+		t.Error("expected auction_id in response")
+	}
+}
+
+func TestAdRequestPlainEmbeddingNoAdvertisers(t *testing.T) {
+	router, _, proxy := setupTestRouterWithProxy(t)
+
+	w := plainEmbeddingAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{},
+		[]enclave.BudgetSnapshot{},
+		"",
+	)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 with no advertisers, got %d", w.Code)
+	}
+}
+
+func TestAdRequestNeitherEmbeddingProvided(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	body, _ := json.Marshal(map[string]interface{}{})
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when neither embedding provided, got %d", w.Code)
+	}
+}
+
 func TestStatsEndpoint(t *testing.T) {
 	router, _, proxy := setupTestRouterWithProxy(t)
 
