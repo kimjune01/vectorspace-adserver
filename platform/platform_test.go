@@ -360,99 +360,364 @@ func TestBudgetTrackerDelete(t *testing.T) {
 	}
 }
 
-// --- Tau (relevance gate) tests ---
-
-// setupEngineWithPositions creates an AuctionEngine with manually-placed positions.
-// The fakeSidecar always returns [0.01, 0.02, 0.03] for query embeddings (seed=0, dim=3).
-func setupEngineWithPositions(t *testing.T, positions []*Position, budgetPerAdv float64) *AuctionEngine {
-	t.Helper()
+func TestPositionHistoryOnRegister(t *testing.T) {
 	sidecar := fakeSidecar(3)
-	t.Cleanup(sidecar.Close)
+	defer sidecar.Close()
+
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
 
 	embedder := NewEmbedder(sidecar.URL)
 	registry := NewPositionRegistry(embedder)
+	if err := registry.SetDB(db); err != nil {
+		t.Fatal(err)
+	}
+
 	budgets := NewBudgetTracker()
-
-	for _, pos := range positions {
-		registry.mu.Lock()
-		registry.positions[pos.ID] = pos
-		registry.mu.Unlock()
-		budgets.Set(pos.ID, budgetPerAdv, pos.Currency)
+	if err := budgets.SetDB(db); err != nil {
+		t.Fatal(err)
 	}
 
-	return NewAuctionEngine(registry, budgets, embedder)
-}
-
-func TestRunAdRequestWithTauFilters(t *testing.T) {
-	// Query embedding from fakeSidecar(3) is always [0.01, 0.02, 0.03].
-	// Close advertiser: embedding = [0.01, 0.02, 0.03] → dist² = 0
-	// Far advertiser:   embedding = [1.0, 1.0, 1.0]   → dist² = (0.99² + 0.98² + 0.97²) ≈ 2.8814
-	close := &Position{ID: "close", Name: "Close Ad", Intent: "close", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"}
-	far := &Position{ID: "far", Name: "Far Ad", Intent: "far", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 5.0, Currency: "USD"}
-
-	engine := setupEngineWithPositions(t, []*Position{close, far}, 1000.0)
-
-	// tau=1.0 should only admit the close ad (dist²=0 < 1.0) but not the far ad (dist²≈2.88 > 1.0)
-	resp, err := engine.RunAdRequestWithTau("test query", 1.0)
+	pos, err := registry.RegisterWithBudget("Trainer", "dog training", 1.0, 5.0, 100.0, "USD", "")
 	if err != nil {
-		t.Fatalf("RunAdRequestWithTau: %v", err)
+		t.Fatal(err)
 	}
-	if resp.BidCount != 1 {
-		t.Errorf("bid_count = %d, want 1 (only close ad should pass tau)", resp.BidCount)
-	}
-	if resp.Winner.ID != "close" {
-		t.Errorf("winner = %q, want %q", resp.Winner.ID, "close")
-	}
-}
 
-func TestRunAdRequestWithTauPassesAll(t *testing.T) {
-	close := &Position{ID: "close", Name: "Close Ad", Intent: "close", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"}
-	far := &Position{ID: "far", Name: "Far Ad", Intent: "far", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 5.0, Currency: "USD"}
-
-	engine := setupEngineWithPositions(t, []*Position{close, far}, 1000.0)
-
-	// tau=0 means no filtering — both ads pass
-	resp, err := engine.RunAdRequestWithTau("test query", 0)
+	// Should have 1 history entry with distance=0
+	history, err := db.GetPositionHistory(pos.ID, 10)
 	if err != nil {
-		t.Fatalf("RunAdRequestWithTau: %v", err)
+		t.Fatal(err)
 	}
-	if resp.BidCount != 2 {
-		t.Errorf("bid_count = %d, want 2 (tau=0 should pass all)", resp.BidCount)
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(history))
 	}
-}
-
-func TestRunAdRequestWithTauFiltersAll(t *testing.T) {
-	// Both ads are far from the query
-	far1 := &Position{ID: "far1", Name: "Far 1", Intent: "far", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"}
-	far2 := &Position{ID: "far2", Name: "Far 2", Intent: "far", Embedding: []float64{2.0, 2.0, 2.0}, Sigma: 0.5, BidPrice: 3.0, Currency: "USD"}
-
-	engine := setupEngineWithPositions(t, []*Position{far1, far2}, 1000.0)
-
-	// tau=0.01 — nothing passes
-	_, err := engine.RunAdRequestWithTau("test query", 0.01)
-	if err == nil {
-		t.Fatal("expected error when tau filters all bidders")
+	if history[0].DistanceMoved != 0 {
+		t.Errorf("expected distance_moved=0, got %f", history[0].DistanceMoved)
+	}
+	if history[0].Intent != "dog training" {
+		t.Errorf("expected intent 'dog training', got %q", history[0].Intent)
 	}
 }
 
-func TestRunAdRequestWithTauRanksByBid(t *testing.T) {
-	// Two ads both within tau, but different bids.
-	// The higher bidder should win (ranking by log(b) among survivors).
-	cheap := &Position{ID: "cheap", Name: "Cheap", Intent: "close", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 1.0, Currency: "USD"}
-	expensive := &Position{ID: "expensive", Name: "Expensive", Intent: "close", Embedding: []float64{0.02, 0.03, 0.04}, Sigma: 0.5, BidPrice: 10.0, Currency: "USD"}
+func TestPositionHistoryOnUpdate(t *testing.T) {
+	sidecar := fakeSidecar(3)
+	defer sidecar.Close()
 
-	engine := setupEngineWithPositions(t, []*Position{cheap, expensive}, 1000.0)
-
-	// tau=1.0 — both pass (both very close to query)
-	resp, err := engine.RunAdRequestWithTau("test query", 1.0)
+	db, err := NewDB(":memory:")
 	if err != nil {
-		t.Fatalf("RunAdRequestWithTau: %v", err)
+		t.Fatal(err)
 	}
-	if resp.BidCount != 2 {
-		t.Errorf("bid_count = %d, want 2", resp.BidCount)
+	defer db.Close()
+
+	embedder := NewEmbedder(sidecar.URL)
+	registry := NewPositionRegistry(embedder)
+	if err := registry.SetDB(db); err != nil {
+		t.Fatal(err)
 	}
-	if resp.Winner.ID != "expensive" {
-		t.Errorf("winner = %q, want %q (higher bid should win)", resp.Winner.ID, "expensive")
+
+	budgets := NewBudgetTracker()
+	if err := budgets.SetDB(db); err != nil {
+		t.Fatal(err)
+	}
+
+	pos, err := registry.RegisterWithBudget("Trainer", "dog training", 1.0, 5.0, 100.0, "USD", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Update intent (triggers re-embedding and new position history)
+	// Note: fake sidecar returns deterministic embeddings, so distance will be 0.
+	// We just verify the history entry is created with the updated intent.
+	_, err = registry.Update(pos.ID, "", "cat grooming", "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := db.GetPositionHistory(pos.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history entries, got %d", len(history))
+	}
+	// Newest first
+	if history[0].Intent != "cat grooming" {
+		t.Errorf("expected latest intent 'cat grooming', got %q", history[0].Intent)
+	}
+
+	// Update sigma only (no intent change, same embedding, distance=0)
+	_, err = registry.Update(pos.ID, "", "", "", 2.0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	history, err = db.GetPositionHistory(pos.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 history entries, got %d", len(history))
+	}
+	if history[0].Sigma != 2.0 {
+		t.Errorf("expected sigma=2.0, got %f", history[0].Sigma)
+	}
+	if history[0].DistanceMoved != 0 {
+		t.Errorf("expected distance_moved=0 for sigma-only change, got %f", history[0].DistanceMoved)
 	}
 }
+
+func TestEntryBondRecordedOnRegister(t *testing.T) {
+	sidecar := fakeSidecar(3)
+	defer sidecar.Close()
+
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	embedder := NewEmbedder(sidecar.URL)
+	registry := NewPositionRegistry(embedder)
+	registry.RelocationFees = RelocationFeeConfig{EntryBond: 10.0}
+	if err := registry.SetDB(db); err != nil {
+		t.Fatal(err)
+	}
+
+	pos, err := registry.RegisterWithBudget("Trainer", "dog training", 1.0, 5.0, 100.0, "USD", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Position history should record the entry bond
+	history, err := db.GetPositionHistory(pos.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(history))
+	}
+	if history[0].RelocationFee != 10.0 {
+		t.Errorf("expected relocation_fee=10.0, got %f", history[0].RelocationFee)
+	}
+	if history[0].DistanceMoved != 0 {
+		t.Errorf("expected distance_moved=0, got %f", history[0].DistanceMoved)
+	}
+}
+
+func TestComputeRelocationFee(t *testing.T) {
+	registry := NewPositionRegistry(nil)
+
+	// No fee configured
+	fee := registry.ComputeRelocationFee(4.0)
+	if fee != 0 {
+		t.Errorf("expected 0 with no fee config, got %f", fee)
+	}
+
+	// With distance factor
+	registry.RelocationFees = RelocationFeeConfig{DistanceFactor: 5.0}
+	fee = registry.ComputeRelocationFee(4.0) // sqrt(4) * 5 = 10
+	if fee != 10.0 {
+		t.Errorf("expected fee=10.0, got %f", fee)
+	}
+
+	fee = registry.ComputeRelocationFee(0) // no move = no fee
+	if fee != 0 {
+		t.Errorf("expected fee=0 for no movement, got %f", fee)
+	}
+}
+
+func TestRelocationFeeOnMove(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	budgets := NewBudgetTracker()
+	if err := budgets.SetDB(db); err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually test fee computation via position history recording
+	// Distance moved = 4.0 (e.g., moved 2 units in one dimension)
+	// sqrt(4) = 2.0, with factor 5.0 → fee = 10.0
+	db.RecordPositionChange("adv-1", "intent", []float64{1, 0}, 1.0, 5.0, 4.0, 10.0)
+
+	history, err := db.GetPositionHistory("adv-1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(history))
+	}
+	if history[0].DistanceMoved != 4.0 {
+		t.Errorf("expected distance_moved=4.0, got %f", history[0].DistanceMoved)
+	}
+	if history[0].RelocationFee != 10.0 {
+		t.Errorf("expected relocation_fee=10.0, got %f", history[0].RelocationFee)
+	}
+
+	// Total fees
+	total, err := db.GetTotalRelocationFees()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 10.0 {
+		t.Errorf("expected total fees=10.0, got %f", total)
+	}
+}
+
+func TestPositionCount(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	db.RecordPositionChange("adv-1", "intent1", []float64{1, 0}, 1.0, 5.0, 0, 0)
+	db.RecordPositionChange("adv-1", "intent2", []float64{0, 1}, 1.0, 5.0, 2.0, 0)
+
+	count, err := db.GetPositionCount("adv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("expected count 2, got %d", count)
+	}
+}
+
+func TestGetTenureDays(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// No history → 0 days
+	days, err := db.GetTenureDays("adv-999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if days != 0 {
+		t.Errorf("expected 0 days for nonexistent, got %f", days)
+	}
+
+	// Record a position change (created_at defaults to 'now')
+	db.RecordPositionChange("adv-1", "intent", []float64{1, 0}, 1.0, 5.0, 0, 0)
+
+	days, err = db.GetTenureDays("adv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Just created, so tenure should be close to 0 (within 1 day)
+	if days < 0 || days > 1 {
+		t.Errorf("expected tenure ~0 days, got %f", days)
+	}
+}
+
+func TestPublisherLogBase(t *testing.T) {
+	db := newMemoryDB(t)
+
+	// Nonexistent publisher → default 5.0
+	logBase := db.GetPublisherLogBase("pub-999")
+	if logBase != 5.0 {
+		t.Errorf("expected default 5.0, got %f", logBase)
+	}
+
+	// Insert a publisher
+	if err := db.InsertPublisher("pub-1", "Test Publisher", "test.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default after insert → 5.0
+	logBase = db.GetPublisherLogBase("pub-1")
+	if logBase != 5.0 {
+		t.Errorf("expected default 5.0, got %f", logBase)
+	}
+
+	// Set custom log base
+	if err := db.SetPublisherLogBase("pub-1", 10.0); err != nil {
+		t.Fatal(err)
+	}
+	logBase = db.GetPublisherLogBase("pub-1")
+	if logBase != 10.0 {
+		t.Errorf("expected 10.0, got %f", logBase)
+	}
+}
+
+func TestEmbeddingsVersion(t *testing.T) {
+	sidecar := fakeSidecar(3)
+	defer sidecar.Close()
+	embedder := NewEmbedder(sidecar.URL)
+	registry := NewPositionRegistry(embedder)
+
+	// Empty registry has a version
+	v1 := registry.EmbeddingsVersion()
+	if v1 == "" {
+		t.Fatal("expected non-empty version for empty registry")
+	}
+	if len(v1) != 32 {
+		t.Errorf("expected 32 hex chars, got %d: %q", len(v1), v1)
+	}
+
+	// Same version on second call (cached)
+	v1b := registry.EmbeddingsVersion()
+	if v1b != v1 {
+		t.Errorf("expected cached version %q, got %q", v1, v1b)
+	}
+
+	// Register changes version (new ID+embedding added)
+	pos, err := registry.Register("Adv1", "test intent", 1.0, 5.0, "USD", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2 := registry.EmbeddingsVersion()
+	if v2 == v1 {
+		t.Error("version should change after Register")
+	}
+
+	// Adding a second position changes version
+	_, err = registry.Register("Adv2", "another intent", 1.0, 3.0, "USD", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3 := registry.EmbeddingsVersion()
+	if v3 == v2 {
+		t.Error("version should change after second Register")
+	}
+
+	// Name-only update does NOT change version (hash is ID+embedding only)
+	_, err = registry.Update(pos.ID, "New Name", "", "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3b := registry.EmbeddingsVersion()
+	// Version is still invalidated by Update (cache cleared), but recomputes to same value
+	// because the embedding didn't change
+	_ = v3b
+
+	// Delete changes version
+	all := registry.GetAll()
+	if err := registry.Delete(all[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	v4 := registry.EmbeddingsVersion()
+	if v4 == v3 {
+		t.Error("version should change after Delete")
+	}
+}
+
+func TestSetBudgetTracker(t *testing.T) {
+	registry := NewPositionRegistry(nil)
+	bt := NewBudgetTracker()
+	registry.SetBudgetTracker(bt)
+	// Just verifying it doesn't panic and the field is set
+	if registry.budgets != bt {
+		t.Error("budget tracker not set")
+	}
+}
+
 

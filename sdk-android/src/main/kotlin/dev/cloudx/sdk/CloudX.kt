@@ -1,4 +1,5 @@
-package dev.cloudx.sdk
+// Reference SDK: sdk-web/ (TypeScript). This SDK follows the API surface defined there.
+package dev.vectorspace.sdk
 
 import android.view.View
 import kotlinx.coroutines.Dispatchers
@@ -11,21 +12,21 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * CloudX Android SDK — main client for the CloudX ad server.
+ * VectorSpace Android SDK — main client for the VectorSpace ad server.
  *
  * Usage:
  * ```kotlin
- * val cloudx = CloudX("http://localhost:8080")
- * cloudx.syncEmbeddings()
- * val ad = cloudx.requestAd("back pain from sitting")
+ * val vectorspace = VectorSpace("http://localhost:8080")
+ * vectorspace.syncEmbeddings()
+ * val ad = vectorspace.requestAd("back pain from sitting")
  * if (ad != null) {
- *     cloudx.reportImpression(ad.auctionId, ad.winner.id)
+ *     vectorspace.reportImpression(ad.auctionId, ad.winner.id)
  * }
  * ```
  *
  * All network calls are suspending functions that run on [Dispatchers.IO].
  */
-class CloudX(private val endpoint: String) {
+class VectorSpace(private val endpoint: String) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -91,15 +92,15 @@ class CloudX(private val endpoint: String) {
                     if ("no bidders passed" in errorBody) {
                         return@withContext null
                     }
-                    throw CloudXException("Ad request failed: HTTP 500 - $errorBody")
+                    throw VectorSpaceException("Ad request failed: HTTP 500 - $errorBody")
                 }
 
                 if (!resp.isSuccessful) {
-                    throw CloudXException("Ad request failed: HTTP ${resp.code}")
+                    throw VectorSpaceException("Ad request failed: HTTP ${resp.code}")
                 }
 
                 val body = resp.body?.string()
-                    ?: throw CloudXException("Empty response body from /ad-request")
+                    ?: throw VectorSpaceException("Empty response body from /ad-request")
                 parseAdResponse(JSONObject(body))
             }
         }

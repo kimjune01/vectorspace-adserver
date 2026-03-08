@@ -3,12 +3,12 @@
 //
 // Build into an EIF via:
 //
-//	docker build -t cloudx-enclave .
-//	nitro-cli build-enclave --docker-uri cloudx-enclave:latest --output-file cloudx-enclave.eif
+//	docker build -t vectorspace-enclave .
+//	nitro-cli build-enclave --docker-uri vectorspace-enclave:latest --output-file vectorspace-enclave.eif
 package main
 
 import (
-	"cloudx-adserver/enclave"
+	"vectorspace/enclave"
 	"encoding/json"
 	"fmt"
 	"log"

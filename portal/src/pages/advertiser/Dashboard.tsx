@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getProfile, updateProfile, getMyAuctions, getMyEvents, downloadMyAuctionsCSV } from '../../api';
+import { getProfile, updateProfile, getMyAuctions, getMyEvents, downloadMyAuctionsCSV, getCreatives, createCreative, updateCreative, deleteCreative } from '../../api';
 import { StatCard } from '../../components/StatCard';
 import { DataTable } from '../../components/DataTable';
 import { Pagination } from '../../components/Pagination';
-import type { PortalProfile, AuctionRow, EventStats } from '../../types';
+import type { PortalProfile, AuctionRow, EventStats, Creative } from '../../types';
 
 export function Dashboard() {
   const [params] = useSearchParams();
@@ -16,6 +16,14 @@ export function Dashboard() {
   const [auctionOffset, setAuctionOffset] = useState(0);
   const [events, setEvents] = useState<EventStats | null>(null);
   const [error, setError] = useState('');
+
+  // Creatives state
+  const [creatives, setCreatives] = useState<Creative[]>([]);
+  const [newTitle, setNewTitle] = useState('');
+  const [newSubtitle, setNewSubtitle] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSubtitle, setEditSubtitle] = useState('');
 
   // Edit state
   const [editName, setEditName] = useState('');
@@ -46,6 +54,7 @@ export function Dashboard() {
       .catch(() => {});
 
     getMyEvents(token).then(setEvents).catch(() => {});
+    getCreatives(token).then(setCreatives).catch(() => {});
   }, [token]);
 
   useEffect(() => {
@@ -218,6 +227,106 @@ export function Dashboard() {
         >
           Save Changes
         </button>
+      </div>
+
+      {/* Creatives */}
+      <div className="bg-white rounded-lg border border-slate-200 p-5 mb-6">
+        <h2 className="text-lg font-semibold mb-4">Creatives</h2>
+
+        {creatives.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {creatives.map((c) => (
+              <div key={c.id} className="flex items-center gap-3 border border-slate-100 rounded p-3">
+                {editingId === c.id ? (
+                  <>
+                    <input
+                      className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="Title"
+                    />
+                    <input
+                      className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm"
+                      value={editSubtitle}
+                      onChange={(e) => setEditSubtitle(e.target.value)}
+                      placeholder="Subtitle"
+                    />
+                    <button
+                      onClick={async () => {
+                        await updateCreative(token, c.id, editTitle, editSubtitle);
+                        setEditingId(null);
+                        setCreatives(await getCreatives(token));
+                      }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="text-sm text-slate-400 hover:underline"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex-1">
+                      <span className="font-medium text-sm">{c.title}</span>
+                      {c.subtitle && <span className="text-slate-500 text-sm ml-2">— {c.subtitle}</span>}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingId(c.id);
+                        setEditTitle(c.title);
+                        setEditSubtitle(c.subtitle);
+                      }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await deleteCreative(token, c.id);
+                        setCreatives(await getCreatives(token));
+                      }}
+                      className="text-sm text-red-500 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Title"
+          />
+          <input
+            className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm"
+            value={newSubtitle}
+            onChange={(e) => setNewSubtitle(e.target.value)}
+            placeholder="Subtitle (optional)"
+          />
+          <button
+            onClick={async () => {
+              if (!newTitle.trim()) return;
+              await createCreative(token, newTitle.trim(), newSubtitle.trim());
+              setNewTitle('');
+              setNewSubtitle('');
+              setCreatives(await getCreatives(token));
+            }}
+            disabled={!newTitle.trim()}
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            Add Creative
+          </button>
+        </div>
       </div>
 
       {/* Auction history */}

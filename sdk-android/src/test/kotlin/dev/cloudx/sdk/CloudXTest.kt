@@ -1,4 +1,4 @@
-package dev.cloudx.sdk
+package dev.vectorspace.sdk
 
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -10,16 +10,16 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 
-class CloudXTest {
+class VectorSpaceTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var cloudx: CloudX
+    private lateinit var vectorspace: VectorSpace
 
     @Before
     fun setUp() {
         server = MockWebServer()
         server.start()
-        cloudx = CloudX(server.url("/").toString())
+        vectorspace = VectorSpace(server.url("/").toString())
     }
 
     @After
@@ -31,7 +31,7 @@ class CloudXTest {
 
     @Test
     fun `proximity returns empty list when cache is empty`() {
-        val results = cloudx.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
+        val results = vectorspace.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
         assertTrue(results.isEmpty())
     }
 
@@ -59,10 +59,10 @@ class CloudXTest {
                 .setBody(embeddingsJson.toString())
         )
 
-        cloudx.syncEmbeddings()
+        vectorspace.syncEmbeddings()
 
         // Query near adv-1
-        val results = cloudx.proximity(floatArrayOf(0.1f, 0.2f, 0.3f))
+        val results = vectorspace.proximity(floatArrayOf(0.1f, 0.2f, 0.3f))
         assertEquals(2, results.size)
         assertEquals("adv-1", results[0].id)
         assertEquals(0.0f, results[0].distance, 0.0001f)
@@ -95,10 +95,10 @@ class CloudXTest {
                 .setBody(embeddingsJson.toString())
         )
 
-        cloudx.syncEmbeddings()
+        vectorspace.syncEmbeddings()
 
         // Query near adv-2
-        val results = cloudx.proximity(floatArrayOf(0.9f, 0.8f, 0.7f))
+        val results = vectorspace.proximity(floatArrayOf(0.9f, 0.8f, 0.7f))
         assertEquals("adv-2", results[0].id)
         assertEquals(0.0f, results[0].distance, 0.0001f)
     }
@@ -125,9 +125,9 @@ class CloudXTest {
                 .setBody(embeddingsJson.toString())
         )
 
-        cloudx.syncEmbeddings()
+        vectorspace.syncEmbeddings()
 
-        val results = cloudx.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
+        val results = vectorspace.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
         assertEquals(1, results.size)
         assertEquals("adv-1", results[0].id)
 
@@ -160,11 +160,11 @@ class CloudXTest {
         // Second call: 304
         server.enqueue(MockResponse().setResponseCode(304))
 
-        cloudx.syncEmbeddings()
-        cloudx.syncEmbeddings()
+        vectorspace.syncEmbeddings()
+        vectorspace.syncEmbeddings()
 
         // Cache should still be intact after 304
-        val results = cloudx.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
+        val results = vectorspace.proximity(floatArrayOf(0.5f, 0.5f, 0.5f))
         assertEquals(1, results.size)
 
         // Verify second request included If-None-Match
@@ -211,7 +211,7 @@ class CloudXTest {
                 .setBody(responseJson.toString())
         )
 
-        val ad = cloudx.requestAd("back pain treatment")
+        val ad = vectorspace.requestAd("back pain treatment")
 
         assertNotNull(ad)
         assertEquals(42, ad!!.auctionId)
@@ -260,7 +260,7 @@ class CloudXTest {
                 .setBody(responseJson.toString())
         )
 
-        cloudx.requestAd("test", tau = 0.5)
+        vectorspace.requestAd("test", tau = 0.5)
 
         val request = server.takeRequest()
         val requestBody = JSONObject(request.body.readUtf8())
@@ -275,7 +275,7 @@ class CloudXTest {
                 .setBody("no bidders passed the eligibility threshold")
         )
 
-        val ad = cloudx.requestAd("obscure intent no one bids on")
+        val ad = vectorspace.requestAd("obscure intent no one bids on")
         assertNull(ad)
     }
 
@@ -290,7 +290,7 @@ class CloudXTest {
                 .setBody("""{"status":"ok"}""")
         )
 
-        val result = cloudx.reportImpression(42, "adv-1")
+        val result = vectorspace.reportImpression(42, "adv-1")
         assertTrue(result)
 
         val request = server.takeRequest()
@@ -311,7 +311,7 @@ class CloudXTest {
                 .setBody("""{"status":"ok"}""")
         )
 
-        cloudx.reportImpression(42, "adv-1", userId = "user-123")
+        vectorspace.reportImpression(42, "adv-1", userId = "user-123")
 
         val request = server.takeRequest()
         val body = JSONObject(request.body.readUtf8())
@@ -326,7 +326,7 @@ class CloudXTest {
                 .setBody("frequency cap exceeded")
         )
 
-        val result = cloudx.reportImpression(42, "adv-1", userId = "user-123")
+        val result = vectorspace.reportImpression(42, "adv-1", userId = "user-123")
         assertFalse(result)
     }
 
@@ -341,7 +341,7 @@ class CloudXTest {
                 .setBody("""{"status":"ok"}""")
         )
 
-        cloudx.reportClick(42, "adv-1", userId = "user-456")
+        vectorspace.reportClick(42, "adv-1", userId = "user-456")
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
@@ -363,7 +363,7 @@ class CloudXTest {
                 .setBody("""{"status":"ok"}""")
         )
 
-        cloudx.reportViewable(42, "adv-1")
+        vectorspace.reportViewable(42, "adv-1")
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)

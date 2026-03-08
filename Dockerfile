@@ -4,7 +4,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /cloudx-server ./cmd/server/
+RUN CGO_ENABLED=0 go build -o /vectorspace-server ./cmd/server/
 
 # Stage 2: Build portal frontend
 FROM node:22-alpine AS portal-builder
@@ -20,11 +20,11 @@ RUN pnpm exec vite build
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
-COPY --from=server-builder /cloudx-server .
+COPY --from=server-builder /vectorspace-server .
 COPY --from=portal-builder /app/portal/dist ./portal-dist
 
 EXPOSE 8080
 VOLUME /data
 
-ENTRYPOINT ["./cloudx-server"]
-CMD ["-db-path=/data/cloudx.db", "-seed"]
+ENTRYPOINT ["./vectorspace-server"]
+CMD ["-db-path=/data/vectorspace.db", "-seed"]

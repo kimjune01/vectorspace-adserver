@@ -1,0 +1,117 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="vectorspace exchange — The ad exchange for AI-native apps" navVariant="home">
+
+  <!-- Hero -->
+  <section class="pt-32 pb-20 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-6">
+        The ad exchange for<br /><span class="gradient-text">AI-native apps</span>
+      </h1>
+      <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-10">
+        Match ads to user intent with vector embeddings. Fair VCG pricing. Privacy by design. One API call.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="/get-started" class="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-lg text-lg font-medium transition">
+          Get started
+        </a>
+        <a href="/how-it-works" class="border border-gray-700 hover:border-gray-500 text-gray-300 px-8 py-3 rounded-lg text-lg font-medium transition">
+          Learn more
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section id="how-it-works" class="py-20 px-6 border-t border-gray-800">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-16">How it works</h2>
+      <div class="grid md:grid-cols-3 gap-12">
+        <div class="text-center">
+          <div class="w-14 h-14 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-4">1</div>
+          <h3 class="text-lg font-semibold mb-2">Capture intent</h3>
+          <p class="text-gray-400">Your app sends the user's context or query as a natural-language intent string. One POST request.</p>
+        </div>
+        <div class="text-center">
+          <div class="w-14 h-14 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-4">2</div>
+          <h3 class="text-lg font-semibold mb-2">Semantic matching</h3>
+          <p class="text-gray-400">We embed the intent and find the closest advertisers in vector space. No keywords, no cookies &mdash; just meaning.</p>
+        </div>
+        <div class="text-center">
+          <div class="w-14 h-14 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-4">3</div>
+          <h3 class="text-lg font-semibold mb-2">Fair pricing</h3>
+          <p class="text-gray-400">VCG auction ensures the winner pays only what's needed to beat the runner-up. Truthful bidding is the dominant strategy.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-20 px-6 bg-gray-900/50 border-t border-gray-800">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-16">Built different</h2>
+      <div class="grid md:grid-cols-2 gap-8">
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-2">Intent matching</div>
+          <h3 class="text-lg font-semibold mb-2">Vector-space relevance</h3>
+          <p class="text-gray-400">Ads are matched by semantic similarity, not keyword hacks. A query about "back pain from sitting" matches an ergonomic chair ad &mdash; even if they share zero words.</p>
+        </div>
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-2">Privacy</div>
+          <h3 class="text-lg font-semibold mb-2">No tracking, no profiles</h3>
+          <p class="text-gray-400">We match on the current intent, not browsing history. Optional TEE enclave support means even we can't see the query.</p>
+        </div>
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-2">Pricing</div>
+          <h3 class="text-lg font-semibold mb-2">VCG auctions</h3>
+          <p class="text-gray-400">Second-price-plus mechanism with embedding-adjusted payments. Advertisers pay their true externality cost. No bid gaming.</p>
+        </div>
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-2">Integration</div>
+          <h3 class="text-lg font-semibold mb-2">One API call</h3>
+          <p class="text-gray-400">POST your intent, get back a ranked ad with creative. SDKs for TypeScript, Python, Swift, and Kotlin. Under 50ms p99.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- For Publishers / Advertisers -->
+  <section class="py-20 px-6 border-t border-gray-800">
+    <div class="max-w-5xl mx-auto grid md:grid-cols-2 gap-12">
+      <div>
+        <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-3">For publishers</div>
+        <h3 class="text-2xl font-bold mb-4">Monetize without compromising UX</h3>
+        <ul class="space-y-3 text-gray-400">
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Ads that actually match what your users are doing</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Revenue dashboard with real-time auction visibility</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Tau threshold control &mdash; set your own relevance floor</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>80% revenue share on VCG payments</span></li>
+        </ul>
+      </div>
+      <div>
+        <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-3">For advertisers</div>
+        <h3 class="text-2xl font-bold mb-4">Reach users at the moment of intent</h3>
+        <ul class="space-y-3 text-gray-400">
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Describe your product in natural language &mdash; we handle targeting</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Pay only your true VCG price, never more</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Budget controls with frequency capping</span></li>
+          <li class="flex items-start gap-3"><span class="text-brand-400 mt-1">&#10003;</span><span>Full auction transparency in the advertiser portal</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 px-6 border-t border-gray-800">
+    <div class="max-w-3xl mx-auto text-center">
+      <h2 class="text-3xl font-bold mb-4">Ready to try it?</h2>
+      <p class="text-gray-400 mb-8">Tell us about your app or product and we'll get you set up.</p>
+      <a href="/get-started" class="inline-block bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-lg text-lg font-medium transition">
+        Get Started
+      </a>
+    </div>
+  </section>
+
+</Base>

@@ -1,8 +1,8 @@
 package tee
 
 import (
-	"cloudx-adserver/enclave"
-	"cloudx-adserver/platform"
+	"vectorspace/enclave"
+	"vectorspace/platform"
 )
 
 // SyncFromPlatform pushes current positions and budgets from the platform

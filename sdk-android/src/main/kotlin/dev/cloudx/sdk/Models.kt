@@ -1,4 +1,4 @@
-package dev.cloudx.sdk
+package dev.vectorspace.sdk
 
 /**
  * A single advertiser embedding entry from the server.

@@ -1,11 +1,12 @@
 package handler
 
 import (
-	"cloudx-adserver/platform"
-	"cloudx-adserver/tee"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -95,11 +96,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.HandleFunc("/advertiser/", advHandler.HandleAdvertiser)
 	mux.HandleFunc("/positions", advHandler.HandlePositions)
 	mux.HandleFunc("/budget/", advHandler.HandleBudget)
-	mux.HandleFunc("/ad-request", pubHandler.HandleAdRequest)
-	mux.HandleFunc("/ad-claim", pubHandler.HandleAdClaim)
 	mux.HandleFunc("/embeddings", pubHandler.HandleEmbeddings)
 	mux.HandleFunc("/embed", pubHandler.HandleEmbed)
-	mux.HandleFunc("/simulate", pubHandler.HandleSimulate)
+	mux.HandleFunc("/simulate", adminAuthMiddleware(cfg.AdminPassword, pubHandler.HandleSimulate))
 	mux.HandleFunc("/chat", chatHandler.HandleChat)
 
 	// Publisher registration (admin-protected)
@@ -119,6 +118,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		mux.HandleFunc("/portal/me", portalHandler.HandlePortalMe)
 		mux.HandleFunc("/portal/me/auctions", portalHandler.HandlePortalAuctions)
 		mux.HandleFunc("/portal/me/events", portalHandler.HandlePortalEvents)
+		mux.HandleFunc("/portal/me/creatives", portalHandler.HandlePortalCreatives)
+		mux.HandleFunc("/portal/me/creatives/", portalHandler.HandlePortalCreative)
 
 		// Publisher portal endpoints
 		pubPortalHandler := &PublisherPortalHandler{DB: cfg.DB}
@@ -148,6 +149,16 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 		// Publisher login (public)
 		mux.HandleFunc("/publisher/login", pubHandler.HandlePublisherLogin)
+
+		// Intake form submissions (public POST, admin-protected GET)
+		intakeHandler := &IntakeHandler{DB: cfg.DB}
+		mux.HandleFunc("/intake", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				adminAuthMiddleware(cfg.AdminPassword, intakeHandler.HandleSubmit)(w, r)
+				return
+			}
+			intakeHandler.HandleSubmit(w, r)
+		})
 	}
 
 	if cfg.DB != nil {
@@ -174,11 +185,24 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		})
 	}
 
-	// TEE endpoints (only when proxy is configured)
-	if cfg.TEEProxy != nil {
-		teeHandler := &TEEHandler{Proxy: cfg.TEEProxy, DB: cfg.DB, Engine: cfg.Engine}
-		mux.HandleFunc("/tee/attestation", teeHandler.HandleAttestation)
-		mux.HandleFunc("/ad-request-private", teeHandler.HandleAdRequestPrivate)
+	// TEE endpoints — all auctions run through the enclave
+	teeHandler := &TEEHandler{Proxy: cfg.TEEProxy, DB: cfg.DB, Engine: cfg.Engine}
+	mux.HandleFunc("/tee/attestation", teeHandler.HandleAttestation)
+	mux.HandleFunc("/ad-request", teeHandler.HandleAdRequestPrivate)
+
+	// Serve portal SPA from portal-dist/ as a catch-all fallback.
+	// ServeMux matches more-specific routes first, so all API routes take priority.
+	if info, err := os.Stat("portal-dist"); err == nil && info.IsDir() {
+		spa := http.FileServer(http.Dir("portal-dist"))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Try to serve the exact file; fall back to index.html for SPA client-side routing.
+			path := "portal-dist" + r.URL.Path
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				http.ServeFile(w, r, "portal-dist/index.html")
+				return
+			}
+			spa.ServeHTTP(w, r)
+		})
 	}
 
 	return corsMiddleware(loggingMiddleware(mux))

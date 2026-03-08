@@ -1,4 +1,4 @@
-module cloudx-adserver
+module vectorspace
 
 go 1.25.0
 

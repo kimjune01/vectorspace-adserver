@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"cloudx-adserver/platform"
+	"vectorspace/platform"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,61 +9,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type adRequestBody struct {
-	Intent      string  `json:"intent"`
-	Tau         float64 `json:"tau,omitempty"`
-	PublisherID string  `json:"publisher_id,omitempty"`
-}
-
 type embedBody struct {
 	Text string `json:"text"`
-}
-
-type embeddingEntry struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Embedding []float64 `json:"embedding"`
-	BidPrice  float64   `json:"bid_price"`
-	Sigma     float64   `json:"sigma"`
-	Currency  string    `json:"currency"`
-}
-
-type embeddingsResponse struct {
-	Version    string           `json:"version"`
-	Embeddings []embeddingEntry `json:"embeddings"`
 }
 
 type PublisherHandler struct {
 	Engine *platform.AuctionEngine
 	DB     *platform.DB
-}
-
-// HandleAdRequest handles POST /ad-request
-func (h *PublisherHandler) HandleAdRequest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req adRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if req.Intent == "" {
-		http.Error(w, "intent is required", http.StatusBadRequest)
-		return
-	}
-
-	resp, err := h.Engine.RunAdRequestFull(req.Intent, req.Tau, req.PublisherID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
 }
 
 // HandleRegisterPublisher handles POST /publisher/register
@@ -111,43 +63,6 @@ func (h *PublisherHandler) HandleRegisterPublisher(w http.ResponseWriter, r *htt
 		"name":   req.Name,
 		"domain": req.Domain,
 		"token":  token,
-	})
-}
-
-// HandleEmbeddings handles GET /embeddings.
-// Returns all advertiser embeddings with a version hash.
-// Supports ETag/If-None-Match for 304 caching.
-func (h *PublisherHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	version := h.Engine.Registry.EmbeddingsVersion()
-
-	if r.Header.Get("If-None-Match") == `"`+version+`"` {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	positions := h.Engine.Registry.GetAll()
-	entries := make([]embeddingEntry, 0, len(positions))
-	for _, p := range positions {
-		entries = append(entries, embeddingEntry{
-			ID:        p.ID,
-			Name:      p.Name,
-			Embedding: p.Embedding,
-			BidPrice:  p.BidPrice,
-			Sigma:     p.Sigma,
-			Currency:  p.Currency,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("ETag", `"`+version+`"`)
-	json.NewEncoder(w).Encode(embeddingsResponse{
-		Version:    version,
-		Embeddings: entries,
 	})
 }
 
@@ -267,6 +182,51 @@ func (h *PublisherHandler) HandlePublisherLogin(w http.ResponseWriter, r *http.R
 	})
 }
 
+// HandleEmbeddings handles GET /embeddings.
+// Returns all advertiser embeddings with ETag caching for SDK sync.
+func (h *PublisherHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	etag := `"` + h.Engine.Registry.EmbeddingsVersion() + `"`
+
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	positions := h.Engine.Registry.GetAll()
+
+	type embeddingEntry struct {
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		Embedding []float64 `json:"embedding"`
+		BidPrice  float64   `json:"bid_price"`
+		Sigma     float64   `json:"sigma"`
+		Currency  string    `json:"currency"`
+	}
+
+	entries := make([]embeddingEntry, 0, len(positions))
+	for _, p := range positions {
+		entries = append(entries, embeddingEntry{
+			ID:        p.ID,
+			Name:      p.Name,
+			Embedding: p.Embedding,
+			BidPrice:  p.BidPrice,
+			Sigma:     p.Sigma,
+			Currency:  p.Currency,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", etag)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"embeddings": entries,
+	})
+}
+
 // HandleEmbed handles POST /embed.
 // Proxies to the embedding sidecar to embed arbitrary text.
 func (h *PublisherHandler) HandleEmbed(w http.ResponseWriter, r *http.Request) {
@@ -307,7 +267,8 @@ func (h *PublisherHandler) HandleSimulate(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Intent string `json:"intent"`
+		Intent string  `json:"intent"`
+		Tau    float64 `json:"tau"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -319,7 +280,7 @@ func (h *PublisherHandler) HandleSimulate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := h.Engine.SimulateAuction(req.Intent)
+	resp, err := h.Engine.SimulateAuction(req.Intent, req.Tau)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -329,56 +290,3 @@ func (h *PublisherHandler) HandleSimulate(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(resp)
 }
 
-// HandleAdClaim handles POST /ad-claim.
-// Records a publisher-reported auction result for billing.
-// The SDK runs the auction locally; this endpoint only learns winner + payment.
-func (h *PublisherHandler) HandleAdClaim(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		WinnerID    string  `json:"winner_id"`
-		Payment     float64 `json:"payment"`
-		PublisherID string  `json:"publisher_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.WinnerID == "" {
-		http.Error(w, "winner_id is required", http.StatusBadRequest)
-		return
-	}
-	if req.Payment < 0 {
-		http.Error(w, "payment must be non-negative", http.StatusBadRequest)
-		return
-	}
-
-	// Validate winner exists in registry
-	pos := h.Engine.Registry.Get(req.WinnerID)
-	if pos == nil {
-		http.Error(w, "unknown winner_id", http.StatusBadRequest)
-		return
-	}
-
-	// Fraud guard: payment must not exceed winner's bid price
-	if req.Payment > pos.BidPrice {
-		http.Error(w, "payment exceeds winner's bid price", http.StatusBadRequest)
-		return
-	}
-
-	// Log to auctions with intent = "[private]"
-	auctionID, err := h.DB.LogAuctionReturningIDWithPublisher("[private]", req.WinnerID, req.Payment, pos.Currency, 0, req.PublisherID)
-	if err != nil {
-		http.Error(w, "failed to log claim: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"auction_id": auctionID,
-		"status":     "ok",
-	})
-}

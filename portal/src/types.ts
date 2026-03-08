@@ -74,28 +74,12 @@ export interface PublisherStats {
   currency: string;
 }
 
-export interface SimulationBidder {
-  id: string;
-  rank: number;
-  name: string;
-  intent: string;
-  bid_price: number;
-  sigma: number;
-  score: number;
-  distance_sq: number;
-  log_bid: number;
+export interface Creative {
+  id: number;
+  advertiser_id: string;
+  title: string;
+  subtitle: string;
+  active: boolean;
+  created_at: string;
 }
 
-export interface TauBucket {
-  tau: number;
-  count: number;
-}
-
-export interface SimulationResult {
-  intent: string;
-  winner: SimulationBidder | null;
-  all_bidders: SimulationBidder[];
-  payment: number;
-  bid_count: number;
-  tau_thresholds: TauBucket[];
-}

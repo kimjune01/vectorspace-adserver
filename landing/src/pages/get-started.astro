@@ -1,0 +1,142 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Get Started — vectorspace exchange" description="Apply as a publisher or advertiser on the vectorspace exchange.">
+
+  <!-- Forms -->
+  <section class="pt-32 pb-20 px-6">
+    <div class="max-w-5xl mx-auto">
+      <h1 class="text-4xl font-bold text-center mb-4">Get started</h1>
+      <p class="text-gray-400 text-center mb-12 max-w-2xl mx-auto">Tell us about your app or product and we'll get you set up.</p>
+
+      <div class="grid md:grid-cols-2 gap-8">
+
+        <!-- Publisher Form -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-8">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-3">For publishers</div>
+          <h2 class="text-xl font-bold mb-6">Monetize your app</h2>
+          <form id="publisher-form" class="space-y-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Name</label>
+              <input type="text" name="name" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="Jane Smith" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Email</label>
+              <input type="email" name="email" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="jane@example.com" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">App or website</label>
+              <input type="text" name="app" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="myapp.com" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Monthly active users (estimate)</label>
+              <select name="mau" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-500 transition">
+                <option value="<1k">&lt; 1,000</option>
+                <option value="1k-10k">1,000 &ndash; 10,000</option>
+                <option value="10k-100k">10,000 &ndash; 100,000</option>
+                <option value="100k+">100,000+</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Tell us about your app</label>
+              <textarea name="description" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition resize-none" placeholder="What does your app do? What kind of users do you have?"></textarea>
+            </div>
+            <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-lg font-medium transition mt-2">
+              Apply as Publisher
+            </button>
+            <p class="hidden text-green-400 text-sm text-center mt-2" id="publisher-success">Thanks! We'll be in touch soon.</p>
+            <p class="hidden text-red-400 text-sm text-center mt-2" id="publisher-error"></p>
+          </form>
+        </div>
+
+        <!-- Advertiser Form -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-8">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-3">For advertisers</div>
+          <h2 class="text-xl font-bold mb-6">Reach the right users</h2>
+          <form id="advertiser-form" class="space-y-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Name</label>
+              <input type="text" name="name" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="John Doe" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Email</label>
+              <input type="email" name="email" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="john@example.com" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Company or product</label>
+              <input type="text" name="company" required class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition" placeholder="Acme Corp" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Monthly ad budget (estimate)</label>
+              <select name="budget" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-brand-500 transition">
+                <option value="<500">&lt; $500</option>
+                <option value="500-2000">$500 &ndash; $2,000</option>
+                <option value="2000-10000">$2,000 &ndash; $10,000</option>
+                <option value="10000+">$10,000+</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">What are you promoting?</label>
+              <textarea name="description" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition resize-none" placeholder="Describe your product or service and who you want to reach."></textarea>
+            </div>
+            <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-lg font-medium transition mt-2">
+              Apply as Advertiser
+            </button>
+            <p class="hidden text-green-400 text-sm text-center mt-2" id="advertiser-success">Thanks! We'll be in touch soon.</p>
+            <p class="hidden text-red-400 text-sm text-center mt-2" id="advertiser-error"></p>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <script is:inline>
+    const API_URL = 'https://api.vectorspace.exchange';
+
+    document.querySelectorAll('#publisher-form, #advertiser-form').forEach(form => {
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = form.querySelector('button');
+        const successEl = form.querySelector('[id$="-success"]');
+        const errorEl = form.querySelector('[id$="-error"]');
+        btn.disabled = true;
+        btn.textContent = 'Submitting...';
+        if (errorEl) errorEl.classList.add('hidden');
+
+        const data = Object.fromEntries(new FormData(form));
+        const isPublisher = form.id === 'publisher-form';
+
+        const payload = {
+          type: isPublisher ? 'publisher' : 'advertiser',
+          name: data.name,
+          email: data.email,
+          company: isPublisher ? data.app : data.company,
+          detail: isPublisher ? data.mau : data.budget,
+          description: data.description || ''
+        };
+
+        try {
+          const res = await fetch(`${API_URL}/intake`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error(await res.text());
+          successEl.classList.remove('hidden');
+          form.querySelectorAll('input, select, textarea, button').forEach(el => el.disabled = true);
+          btn.classList.add('opacity-50');
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = isPublisher ? 'Apply as Publisher' : 'Apply as Advertiser';
+          if (errorEl) {
+            errorEl.textContent = 'Something went wrong. Please try again.';
+            errorEl.classList.remove('hidden');
+          }
+        }
+      });
+    });
+  </script>
+
+</Base>

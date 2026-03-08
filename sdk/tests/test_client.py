@@ -1,4 +1,4 @@
-"""Tests for CloudX Python SDK."""
+"""Tests for VectorSpace Python SDK."""
 
 import json
 import threading
@@ -7,7 +7,7 @@ from unittest import TestCase
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from cloudx.client import CloudX
+from vectorspace.client import VectorSpace
 
 
 class FakeHandler(BaseHTTPRequestHandler):
@@ -61,7 +61,7 @@ class FakeHandler(BaseHTTPRequestHandler):
         pass  # suppress logs
 
 
-class TestCloudX(TestCase):
+class TestVectorSpace(TestCase):
     server: HTTPServer
     thread: threading.Thread
     endpoint: str
@@ -79,8 +79,8 @@ class TestCloudX(TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
 
-    def new_client(self) -> CloudX:
-        return CloudX(self.endpoint)
+    def new_client(self) -> VectorSpace:
+        return VectorSpace(self.endpoint)
 
     # ── sync_embeddings ──────────────────────────────────────────
 

@@ -29,7 +29,7 @@ Files: `handler/publisher.go`, `handler/routes.go`, `platform/registry.go`
 
 ## SDK
 
-New methods on `CloudXClient`:
+New methods on `VectorSpaceClient`:
 
 ```python
 client.sync_embeddings()          # pull catalog, respect ETag
@@ -43,7 +43,7 @@ client.proximity(query_embedding) # local cosine distance, sorted
 - Auto-syncs on first `proximity()` call if cache is empty
 - No background thread. Publisher controls the sync schedule.
 
-Files: `sdk/cloudx/client.py`, `sdk/tests/test_client.py`
+Files: `sdk/vectorspace/client.py`, `sdk/tests/test_client.py`
 
 ## Verification
 

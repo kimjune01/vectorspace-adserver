@@ -2,14 +2,18 @@ package auction
 
 import "math"
 
-// LogBase is the base of the logarithm used in bid scoring.
+// DefaultLogBase is the default base of the logarithm used in bid scoring.
 // Higher values compress price differences, making distance matter more.
 // Default 5.0 balances bid vs relevance so tau changes outcomes ~50% of the time.
-var LogBase = 5.0
+// Configurable per-publisher: range b=5 (balanced) to b=50 (quality absolutist).
+const DefaultLogBase = 5.0
 
-// logB computes log_LogBase(x) = ln(x) / ln(LogBase).
-func logB(x float64) float64 {
-	return math.Log(x) / math.Log(LogBase)
+// LogBase is kept for backwards compatibility. Use DefaultLogBase for new code.
+var LogBase = DefaultLogBase
+
+// logBWithBase computes log_base(x) = ln(x) / ln(base).
+func logBWithBase(x, base float64) float64 {
+	return math.Log(x) / math.Log(base)
 }
 
 // SquaredEuclideanDistance computes ||a - b||² between two vectors.
@@ -28,8 +32,14 @@ func SquaredEuclideanDistance(a, b []float64) float64 {
 
 // ComputeEmbeddingScore returns log_B(price) - distance²/σ².
 // If bidEmbedding is nil/empty or sigma is 0, returns log_B(price) (pure price ranking).
+// Uses the global LogBase. For per-publisher log base, use ComputeEmbeddingScoreWithBase.
 func ComputeEmbeddingScore(price float64, bidEmbedding []float64, sigma float64, queryEmbedding []float64) float64 {
-	logPrice := logB(price)
+	return ComputeEmbeddingScoreWithBase(price, bidEmbedding, sigma, queryEmbedding, LogBase)
+}
+
+// ComputeEmbeddingScoreWithBase returns log_base(price) - distance²/σ² using the given log base.
+func ComputeEmbeddingScoreWithBase(price float64, bidEmbedding []float64, sigma float64, queryEmbedding []float64, logBase float64) float64 {
+	logPrice := logBWithBase(price, logBase)
 	if len(bidEmbedding) == 0 || len(queryEmbedding) == 0 || sigma == 0 {
 		return logPrice
 	}

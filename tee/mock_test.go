@@ -1,7 +1,7 @@
 package tee
 
 import (
-	"cloudx-adserver/enclave"
+	"vectorspace/enclave"
 	"encoding/json"
 	"math"
 	"testing"

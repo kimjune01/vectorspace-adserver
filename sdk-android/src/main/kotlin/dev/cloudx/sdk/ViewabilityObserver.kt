@@ -1,4 +1,4 @@
-package dev.cloudx.sdk
+package dev.vectorspace.sdk
 
 import android.graphics.Rect
 import android.os.Handler

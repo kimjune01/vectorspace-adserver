@@ -1,8 +1,8 @@
 package main
 
 import (
-	original "cloudx-adserver/auction"
-	vendored "cloudx-adserver/enclave/auction"
+	original "vectorspace/auction"
+	vendored "vectorspace/enclave/auction"
 	"math"
 	"testing"
 )

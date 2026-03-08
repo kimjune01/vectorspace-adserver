@@ -71,7 +71,7 @@ The exchange parent pushes positions and budgets into the enclave via `sync_posi
 
 The `auction/` subdirectory is a **verbatim copy** of the auction math from the private adserver repo. This is intentional duplication, not an abstraction failure.
 
-**Why copy instead of import?** If this package imported `cloudx-adserver/auction`, anyone auditing the enclave would need access to the private repo to verify what code runs inside the TEE. The whole point is that they don't need to trust us.
+**Why copy instead of import?** If this package imported `vectorspace-adserver/auction`, anyone auditing the enclave would need access to the private repo to verify what code runs inside the TEE. The whole point is that they don't need to trust us.
 
 **Why not a shared Go module?** A separate `github.com/org/auction` module would work, but adds release coordination overhead for ~280 lines of pure math. Copy is simpler and the drift risk is managed by a cross-validation test in the parent repo.
 
@@ -139,7 +139,7 @@ To verify this package is self-contained:
 go list -f '{{join .Imports "\n"}}' ./enclave/auction/
 
 # No imports from the private auction package
-grep -r '"cloudx-adserver/auction"' enclave/
+grep -r '"vectorspace-adserver/auction"' enclave/
 # (should return nothing)
 
 # Build and test in isolation

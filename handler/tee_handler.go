@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"cloudx-adserver/enclave"
-	"cloudx-adserver/platform"
-	"cloudx-adserver/tee"
+	"vectorspace/enclave"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"net/http"
 )
@@ -33,7 +33,7 @@ func (h *TEEHandler) HandleAttestation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(attest)
 }
 
-// HandleAdRequestPrivate handles POST /ad-request-private.
+// HandleAdRequestPrivate handles POST /ad-request.
 // Receives an encrypted embedding, forwards to the enclave, returns the result.
 func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -50,6 +50,11 @@ func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Reque
 	if req.EncryptedEmbedding.AESKeyEncrypted == "" || req.EncryptedEmbedding.EncryptedPayload == "" {
 		http.Error(w, "encrypted_embedding fields are required", http.StatusBadRequest)
 		return
+	}
+
+	// Look up publisher's log base if not set in request
+	if req.LogBase <= 0 && req.PublisherID != "" && h.DB != nil {
+		req.LogBase = h.DB.GetPublisherLogBase(req.PublisherID)
 	}
 
 	resp, err := h.Proxy.RunAuction(&req)

@@ -1,7 +1,7 @@
 package enclave
 
 import (
-	"cloudx-adserver/enclave/auction"
+	"vectorspace/enclave/auction"
 	"encoding/json"
 	"math"
 	"testing"

@@ -1,4 +1,4 @@
-package dev.cloudx.sdk
+package dev.vectorspace.sdk
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -7,7 +7,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 /**
- * Handles impression, click, and viewable event reporting to the CloudX server.
+ * Handles impression, click, and viewable event reporting to the VectorSpace server.
  */
 internal class EventTracker(
     private val client: OkHttpClient,
@@ -67,7 +67,7 @@ internal class EventTracker(
                 return 429
             }
             if (!resp.isSuccessful) {
-                throw CloudXException("Event $path failed: HTTP ${resp.code}")
+                throw VectorSpaceException("Event $path failed: HTTP ${resp.code}")
             }
             return resp.code
         }

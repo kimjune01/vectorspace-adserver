@@ -1,7 +1,7 @@
 package enclave
 
 import (
-	"cloudx-adserver/enclave/auction"
+	"vectorspace/enclave/auction"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
@@ -87,14 +87,18 @@ func ProcessPrivateAuction(
 
 	bidCount := len(bids)
 
-	// 5. Run auction
-	result := auction.RunAuction(bids, 0, queryEmbedding)
+	// 5. Run auction (use publisher's log base if set, otherwise default)
+	logBase := req.LogBase
+	if logBase <= 0 {
+		logBase = auction.DefaultLogBase
+	}
+	result := auction.RunAuctionWithBase(bids, 0, logBase, queryEmbedding)
 	if result.Winner == nil {
 		return nil, fmt.Errorf("auction produced no winner")
 	}
 
 	// 6. Compute VCG payment
-	payment := auction.ComputeVCGPayment(result, queryEmbedding)
+	payment := auction.ComputeVCGPaymentWithBase(result, queryEmbedding, logBase)
 
 	return &AuctionResponse{
 		WinnerID: result.Winner.ID,

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
-	"cloudx-adserver/handler"
-	"cloudx-adserver/platform"
+	"vectorspace/enclave"
+	"vectorspace/handler"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -56,26 +58,38 @@ func fakeSidecar(embDim int) *httptest.Server {
 	}))
 }
 
-func setupServer(numAdvertisers int, embDim int) (http.Handler, *httptest.Server) {
+func setupServer(numAdvertisers int, embDim int) (http.Handler, *httptest.Server, *tee.MockTEEProxy) {
 	sidecar := fakeSidecar(embDim)
 	embedder := platform.NewEmbedder(sidecar.URL)
 	registry := platform.NewPositionRegistry(embedder)
 	budgets := platform.NewBudgetTracker()
 	engine := platform.NewAuctionEngine(registry, budgets, embedder)
+
+	proxy, err := tee.NewMockTEEProxy()
+	if err != nil {
+		panic(fmt.Sprintf("NewMockTEEProxy: %v", err))
+	}
+
 	router := handler.NewRouter(handler.RouterConfig{
 		Registry: registry,
 		Budgets:  budgets,
 		Engine:   engine,
+		TEEProxy: proxy,
 	})
 
-	// Pre-register advertisers
+	// Pre-register advertisers and build position/budget snapshots for TEE
+	positions := make([]enclave.PositionSnapshot, 0, numAdvertisers)
+	budgetSnaps := make([]enclave.BudgetSnapshot, 0, numAdvertisers)
+
 	for i := 0; i < numAdvertisers; i++ {
+		name := fmt.Sprintf("adv-%d", i)
+		bidPrice := 2.0 + float64(i)*0.1
 		body := map[string]interface{}{
-			"name":      fmt.Sprintf("adv-%d", i),
+			"name":      name,
 			"intent":    fmt.Sprintf("test intent for advertiser %d", i),
 			"sigma":     0.5,
-			"bid_price": 2.0 + float64(i)*0.1,
-			"budget":    1e9, // large budget so we don't run out
+			"bid_price": bidPrice,
+			"budget":    1e9,
 			"currency":  "USD",
 		}
 		b, _ := json.Marshal(body)
@@ -85,21 +99,57 @@ func setupServer(numAdvertisers int, embDim int) (http.Handler, *httptest.Server
 		if w.Code != 201 {
 			panic(fmt.Sprintf("register failed: %d %s", w.Code, w.Body.String()))
 		}
+
+		var result map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&result)
+		advID := result["id"].(string)
+
+		emb := make([]float64, embDim)
+		for d := range emb {
+			emb[d] = float64(i+1) * 0.01 * float64(d+1)
+		}
+		positions = append(positions, enclave.PositionSnapshot{
+			ID: advID, Name: name, Embedding: emb, Sigma: 0.5, BidPrice: bidPrice, Currency: "USD",
+		})
+		budgetSnaps = append(budgetSnaps, enclave.BudgetSnapshot{
+			AdvertiserID: advID, Total: 1e9, Spent: 0, Currency: "USD",
+		})
 	}
 
-	return router, sidecar
+	proxy.SyncPositions(positions)
+	proxy.SyncBudgets(budgetSnaps)
+
+	return router, sidecar, proxy
 }
 
-func makeAdRequestBody() []byte {
-	b, _ := json.Marshal(map[string]interface{}{"intent": "test query intent"})
+func makeEncryptedAdRequestBody(proxy *tee.MockTEEProxy, embDim int) []byte {
+	queryEmbedding := make([]float64, embDim)
+	for d := range queryEmbedding {
+		queryEmbedding[d] = 0.01 * float64(d+1)
+	}
+	embJSON, _ := json.Marshal(queryEmbedding)
+	pubKey := proxy.KeyManagerPublicKey()
+	aesKeyEnc, payloadEnc, nonce, err := enclave.EncryptHybrid(embJSON, &pubKey, enclave.HashAlgorithmSHA256)
+	if err != nil {
+		panic(fmt.Sprintf("EncryptHybrid: %v", err))
+	}
+	body := map[string]interface{}{
+		"encrypted_embedding": enclave.EncryptedEmbedding{
+			AESKeyEncrypted:  aesKeyEnc,
+			EncryptedPayload: payloadEnc,
+			Nonce:            nonce,
+			HashAlgorithm:    "SHA-256",
+		},
+	}
+	b, _ := json.Marshal(body)
 	return b
 }
 
 // BenchmarkAdRequest_10adv_3dim — small scenario
 func BenchmarkAdRequest_10adv_3dim(b *testing.B) {
-	router, sidecar := setupServer(10, 3)
+	router, sidecar, proxy := setupServer(10, 3)
 	defer sidecar.Close()
-	body := makeAdRequestBody()
+	body := makeEncryptedAdRequestBody(proxy, 3)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -115,9 +165,9 @@ func BenchmarkAdRequest_10adv_3dim(b *testing.B) {
 
 // BenchmarkAdRequest_100adv_384dim — realistic scenario (384-dim embeddings)
 func BenchmarkAdRequest_100adv_384dim(b *testing.B) {
-	router, sidecar := setupServer(100, 384)
+	router, sidecar, proxy := setupServer(100, 384)
 	defer sidecar.Close()
-	body := makeAdRequestBody()
+	body := makeEncryptedAdRequestBody(proxy, 384)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -133,9 +183,9 @@ func BenchmarkAdRequest_100adv_384dim(b *testing.B) {
 
 // BenchmarkAdRequest_1000adv_384dim — large scenario
 func BenchmarkAdRequest_1000adv_384dim(b *testing.B) {
-	router, sidecar := setupServer(1000, 384)
+	router, sidecar, proxy := setupServer(1000, 384)
 	defer sidecar.Close()
-	body := makeAdRequestBody()
+	body := makeEncryptedAdRequestBody(proxy, 384)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -167,9 +217,9 @@ func TestConcurrentThroughput(t *testing.T) {
 
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
-			router, sidecar := setupServer(sc.numAdvertisers, sc.embDim)
+			router, sidecar, proxy := setupServer(sc.numAdvertisers, sc.embDim)
 			t.Cleanup(sidecar.Close)
-			body := makeAdRequestBody()
+			body := makeEncryptedAdRequestBody(proxy, sc.embDim)
 
 			var total atomic.Int64
 			var errors atomic.Int64

@@ -1,0 +1,5 @@
+config:
+  aws:region: us-west-2
+  vectorspace-infra:domain: vectorspace.exchange
+  vecspace-infra:instanceType: t3.medium
+  vecspace-infra:keyName: ""

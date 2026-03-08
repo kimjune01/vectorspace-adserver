@@ -1,0 +1,260 @@
+---
+import Base from '../layouts/Base.astro';
+
+const adRequestCode = `{
+  "encrypted_embedding": {
+    "aes_key_encrypted": "base64...",
+    "encrypted_payload": "base64...",
+    "nonce": "base64...",
+    "hash_algorithm": "SHA-256"
+  }
+}`;
+
+const adResponseCode = `{
+  "auction_id": 12345,
+  "winner_id": "adv-42",
+  "payment": 1.95,
+  "currency": "USD",
+  "bid_count": 24
+}`;
+
+const tsCode = `<span class="text-brand-400">const</span> vs = <span class="text-brand-400">new</span> VectorSpace(url);
+
+<span class="text-gray-500">// Request an ad</span>
+<span class="text-brand-400">const</span> ad = <span class="text-brand-400">await</span> vs.requestAd({
+  intent: <span class="text-green-400">"dog training"</span>,
+  tau: 0.6
+});
+
+<span class="text-gray-500">// Or extract intent from chat</span>
+<span class="text-brand-400">const</span> ad = <span class="text-brand-400">await</span> vs.requestAdFromChat(
+  messages
+);`;
+
+const pyCode = `vs = CloudX(endpoint)
+
+<span class="text-gray-500"># Request an ad</span>
+ad = vs.request_ad(
+  intent=<span class="text-green-400">"dog training"</span>,
+  tau=0.6
+)
+
+<span class="text-gray-500"># Report events</span>
+vs.report_impression(
+  ad[<span class="text-green-400">"auction_id"</span>],
+  ad[<span class="text-green-400">"winner"</span>][<span class="text-green-400">"id"</span>]
+)`;
+
+const ktCode = `<span class="text-brand-400">val</span> vs = VectorSpace(url)
+
+<span class="text-gray-500">// Request an ad</span>
+<span class="text-brand-400">val</span> ad = vs.requestAd(
+  intent = <span class="text-green-400">"dog training"</span>,
+  tau = 0.6
+)
+
+<span class="text-gray-500">// IAB viewability</span>
+vs.observeViewability(
+  view, ad.auctionId,
+  ad.winner.id
+)`;
+---
+
+<Base title="How It Works — vectorspace exchange" description="Semantic ad matching with vector embeddings, VCG fair pricing, and three levels of privacy protection.">
+
+  <!-- Hero -->
+  <section class="pt-32 pb-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <h1 class="text-5xl font-bold tracking-tight leading-tight mb-6">
+        How <span class="gradient-text">vectorspace</span> works
+      </h1>
+      <p class="text-xl text-gray-400 max-w-2xl mx-auto">
+        A deep dive into the architecture: semantic matching, fair auctions, and privacy you can verify.
+      </p>
+    </div>
+  </section>
+
+  <!-- The Flow -->
+  <section class="py-16 px-6 border-t border-gray-800">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold mb-12">The ad request lifecycle</h2>
+
+      <div class="space-y-12">
+        <!-- Step 1 -->
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">1</div>
+          <div>
+            <h3 class="text-xl font-semibold mb-3">SDK embeds the intent locally</h3>
+            <p class="text-gray-400 mb-4">
+              Your app calls <code class="text-brand-400 bg-gray-800 px-1.5 py-0.5 rounded">requestAd({'{ intent }'})</code>. The SDK converts the natural-language intent into a 384-dimensional vector on the client side. The raw text never leaves the user's device.
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">2</div>
+          <div>
+            <h3 class="text-xl font-semibold mb-3">Encrypt with the enclave's attested key</h3>
+            <p class="text-gray-400 mb-4">
+              The SDK fetches the enclave's attested public key (RSA-OAEP, SHA-256) and encrypts the embedding using hybrid RSA + AES-256-GCM. The encrypted payload is sent to the exchange. Not even the exchange operator can see the query &mdash; only the enclave can decrypt it.
+            </p>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+              <div class="text-gray-500 mb-1">POST /ad-request</div>
+              <pre class="text-gray-300" set:html={adRequestCode} />
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">3</div>
+          <div>
+            <h3 class="text-xl font-semibold mb-3">VCG auction inside the enclave</h3>
+            <p class="text-gray-400 mb-4">
+              Inside the AWS Nitro Enclave, the embedding is decrypted and eligible ads are scored by combining bid price and embedding relevance:
+            </p>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm mb-4">
+              <span class="text-gray-300">score = log&#8325;(price) &minus; (distance&sup2; / &sigma;&sup2;)</span>
+            </div>
+            <p class="text-gray-400 mb-4">
+              The highest-scoring ad wins. The payment is calculated using the Vickrey-Clarke-Groves mechanism: the winner pays only the amount needed to beat the runner-up, adjusted for relevance distance. This means truthful bidding is the dominant strategy &mdash; there's no incentive to game bids. After the auction completes, the enclave zeros the embedding from memory and returns only the winner ID and payment.
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="flex gap-6">
+          <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">4</div>
+          <div>
+            <h3 class="text-xl font-semibold mb-3">Client receives winner + payment</h3>
+            <p class="text-gray-400 mb-4">
+              Your app gets back the winning advertiser ID and the VCG payment amount. The SDK handles impression reporting, click tracking, and IAB viewability measurement automatically.
+            </p>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+              <pre class="text-gray-300" set:html={adResponseCode} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Privacy Architecture -->
+  <section class="py-16 px-6 bg-gray-900/50 border-t border-gray-800">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold mb-4">Privacy architecture</h2>
+      <p class="text-gray-400 mb-12">Every auction runs inside an AWS Nitro Enclave. The exchange operator never sees your query.</p>
+
+      <div class="space-y-8">
+        <!-- TEE-only architecture -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 bg-brand-500/20 text-brand-400 rounded-lg flex items-center justify-center text-sm font-bold">T</div>
+            <h3 class="text-lg font-semibold">TEE enclave &mdash; the only auction path</h3>
+          </div>
+          <p class="text-gray-400 mb-3">
+            The SDK embeds the intent locally, then encrypts the embedding using the enclave's attested public key (RSA-OAEP + AES-256-GCM). The encrypted payload is sent to an AWS Nitro Enclave that decrypts, runs the VCG auction, zeros the embedding from memory, and returns only the winner ID and payment. Not even we can see the query.
+          </p>
+          <p class="text-gray-400 mb-3">
+            The enclave code is self-contained and stdlib-only, designed for independent audit by publishers, researchers, and regulators.
+          </p>
+          <div class="text-sm text-gray-500">
+            Endpoints: <code class="text-gray-400">GET /tee/attestation</code> + <code class="text-gray-400">POST /ad-request</code>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- SDK Integration -->
+  <section class="py-16 px-6 border-t border-gray-800">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold mb-4">SDK integration</h2>
+      <p class="text-gray-400 mb-12">Native SDKs for TypeScript, Python, and Kotlin. One method call to request an ad, with built-in event tracking and viewability measurement.</p>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <!-- TypeScript -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-4">TypeScript</div>
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+            <pre class="text-gray-300" set:html={tsCode} />
+          </div>
+        </div>
+
+        <!-- Python -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-4">Python</div>
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+            <pre class="text-gray-300" set:html={pyCode} />
+          </div>
+        </div>
+
+        <!-- Kotlin -->
+        <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+          <div class="text-brand-400 text-sm font-semibold uppercase tracking-wider mb-4">Kotlin</div>
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+            <pre class="text-gray-300" set:html={ktCode} />
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 grid md:grid-cols-2 gap-6">
+        <div class="bg-gray-800/30 border border-gray-700/30 rounded-lg p-5">
+          <h4 class="font-semibold mb-2">Built-in event tracking</h4>
+          <p class="text-gray-400 text-sm">Impression, click, and viewability events are reported through the SDK. Viewability follows the IAB standard: 50% of pixels visible for 1 continuous second.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- What we don't do -->
+  <section class="py-16 px-6 bg-gray-900/50 border-t border-gray-800">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold mb-12">What we don't do</h2>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="flex items-start gap-4">
+          <span class="text-red-400 text-xl mt-0.5">&times;</span>
+          <div>
+            <h4 class="font-semibold mb-1">No user profiles</h4>
+            <p class="text-gray-400 text-sm">We don't build profiles of users across sessions or apps. Each ad request is independent.</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-4">
+          <span class="text-red-400 text-xl mt-0.5">&times;</span>
+          <div>
+            <h4 class="font-semibold mb-1">No cookies or fingerprinting</h4>
+            <p class="text-gray-400 text-sm">No tracking cookies, no browser fingerprints, no device IDs. Matching is based on the current intent only.</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-4">
+          <span class="text-red-400 text-xl mt-0.5">&times;</span>
+          <div>
+            <h4 class="font-semibold mb-1">No cross-site tracking</h4>
+            <p class="text-gray-400 text-sm">We don't follow users across publishers or apps. An ad request from one app has no connection to another.</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-4">
+          <span class="text-red-400 text-xl mt-0.5">&times;</span>
+          <div>
+            <h4 class="font-semibold mb-1">No data selling</h4>
+            <p class="text-gray-400 text-sm">Intent data is never sold to third parties. Auction logs are retained only for billing and fraud prevention.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 px-6 border-t border-gray-800">
+    <div class="max-w-3xl mx-auto text-center">
+      <h2 class="text-3xl font-bold mb-4">Ready to integrate?</h2>
+      <p class="text-gray-400 mb-8">Tell us about your app or product and we'll get you set up with API keys.</p>
+      <a href="/get-started" class="inline-block bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-lg text-lg font-medium transition">
+        Get Started
+      </a>
+    </div>
+  </section>
+
+</Base>

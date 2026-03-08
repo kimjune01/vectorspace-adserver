@@ -1,4 +1,4 @@
-# CloudX Ad Server
+# VectorSpace Ad Server
 
 Semantic ad auction system with embedding-based relevance scoring, VCG pricing, and multi-platform publisher SDKs.
 
@@ -32,8 +32,8 @@ sidecar/main.py         — Embedding sidecar (BGE-small-en-v1.5, :8081)
 
 | SDK | Path | Language | Event Tracking |
 |-----|------|----------|----------------|
-| TypeScript | `demo/src/cloudx-sdk.ts` | TS | reportImpression, reportClick, reportViewable, observeViewability |
-| Python | `sdk/cloudx/client.py` | Python 3.10+ | report_impression, report_click, report_viewable |
+| TypeScript | `demo/src/vectorspace-sdk.ts` | TS | reportImpression, reportClick, reportViewable, observeViewability |
+| Python | `sdk/vectorspace/client.py` | Python 3.10+ | report_impression, report_click, report_viewable |
 | iOS | `sdk-ios/` | Swift 5.9+ | Swift Package, Accelerate framework |
 | Android | `sdk-android/` | Kotlin | OkHttp, Coroutines, minSdk 21 |
 
@@ -55,7 +55,7 @@ Publisher-facing simulation that demonstrates the full ad experience. Built with
 - **Replay mode** — `?replay=true` runs scripted demo sequences with phase banners (no-match, proximity, tap)
 - **Prebuilt conversations** — Dropdown menu to load canned chat flows
 - **Publisher themes** — Configurable theme context (colors, default tau)
-- **TypeScript SDK** — `cloudx-sdk.ts` lives here, used by both demo and as reference for other SDKs
+- **TypeScript SDK** — `vectorspace-sdk.ts` lives here, used by both demo and as reference for other SDKs
 
 ## Quick Start
 
@@ -64,7 +64,7 @@ Publisher-facing simulation that demonstrates the full ad experience. Built with
 cd sidecar && uv run main.py
 
 # 2. Start server (seeded with 34 demo advertisers)
-go run ./cmd/server/ -db-path=cloudx.db -seed -admin-password=secret -sidecar-url=http://localhost:8081
+go run ./cmd/server/ -db-path=vectorspace.db -seed -admin-password=secret -sidecar-url=http://localhost:8081
 
 # 3. Start demo (separate terminal)
 cd demo && pnpm dev
@@ -142,8 +142,8 @@ curl -X POST localhost:8080/admin/publishers \
 | File | `VITE_API_URL` |
 |------|----------------|
 | `.env.development` | `http://localhost:8080` |
-| `.env.staging` | `https://staging-api.cloudx.dev` |
-| `.env.production` | `https://api.cloudx.dev` |
+| `.env.staging` | `https://staging-api.vectorspace.dev` |
+| `.env.production` | `https://api.vectorspace.exchange` |
 
 ## Build & Deploy
 
@@ -151,9 +151,34 @@ curl -X POST localhost:8080/admin/publishers \
 make test          # Go tests
 make test-portal   # Portal type-check + build
 make build         # Production build (server binary + portal)
-make staging       # Staging build
 make docker-build  # Docker image
+make deploy        # Deploy infrastructure to AWS
 ```
+
+### Deploy to AWS
+
+Infrastructure is managed with Pulumi Go in `infra/`.
+
+```bash
+# 1. Fill in your credentials
+cp infra/.env.example infra/.env
+# Edit infra/.env with your AWS keys, Anthropic key, admin password
+
+# 2. Initialize Pulumi stack (first time only)
+cd infra && pulumi stack init dev
+
+# 3. Deploy
+make deploy
+```
+
+This creates:
+- EC2 t3.medium running Docker Compose (Go server + Python sidecar + Caddy)
+- S3 + CloudFront for the landing page at `vectorspace.exchange`
+- Route 53 hosted zone + DNS records
+- ACM certificate (auto-validated)
+- EBS volume for SQLite persistence
+
+After deploy, update your domain nameservers at Namecheap to the Route 53 NS records shown in the outputs.
 
 ## Testing
 

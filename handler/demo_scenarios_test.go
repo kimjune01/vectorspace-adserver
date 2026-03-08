@@ -2,7 +2,8 @@ package handler
 
 import (
 	"bytes"
-	"cloudx-adserver/platform"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -196,11 +197,17 @@ func setupDemoRouter(t *testing.T, sidecarURL string) http.Handler {
 	engine := platform.NewAuctionEngine(registry, budgets, embedder)
 	engine.DB = db
 
+	proxy, proxyErr := tee.NewMockTEEProxy()
+	if proxyErr != nil {
+		t.Fatalf("NewMockTEEProxy: %v", proxyErr)
+	}
+
 	return NewRouter(RouterConfig{
 		Registry: registry,
 		Budgets:  budgets,
 		Engine:   engine,
 		DB:       db,
+		TEEProxy: proxy,
 	})
 }
 
@@ -214,7 +221,7 @@ func TestDemoScenarios(t *testing.T) {
 				t.Run(q.Intent, func(t *testing.T) {
 					// Run with tau
 					body, _ := json.Marshal(map[string]interface{}{"intent": q.Intent, "tau": q.Tau})
-					req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+					req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
 					w := httptest.NewRecorder()
 					router.ServeHTTP(w, req)
 
@@ -301,7 +308,7 @@ func TestDemoTauFiltersIrrelevant(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			body, _ := json.Marshal(map[string]interface{}{"intent": tc.Intent, "tau": tc.Tau})
-			req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+			req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
@@ -344,7 +351,7 @@ func TestDemoWithoutTauGeneralistWins(t *testing.T) {
 	for _, intent := range queries {
 		t.Run(intent, func(t *testing.T) {
 			body, _ := json.Marshal(map[string]interface{}{"intent": intent})
-			req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+			req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 

@@ -17,7 +17,7 @@ import os
 import anthropic
 import pytest
 
-from cloudx import CloudXClient, INTENT_PROMPT
+from vectorspace import VectorSpaceClient, INTENT_PROMPT
 
 ADSERVER_URL = os.getenv("ADSERVER_URL", "http://localhost:8080")
 
@@ -41,7 +41,7 @@ def llm():
 
 @pytest.fixture(scope="module")
 def client():
-    c = CloudXClient(ADSERVER_URL)
+    c = VectorSpaceClient(ADSERVER_URL)
     yield c
     c.close()
 

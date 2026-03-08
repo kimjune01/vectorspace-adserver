@@ -1,3 +1,4 @@
+# Reference SDK: sdk-web/ (TypeScript). This SDK follows the API surface defined there.
 """CloudX Publisher SDK — Python client."""
 
 from __future__ import annotations

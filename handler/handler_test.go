@@ -2,8 +2,11 @@ package handler
 
 import (
 	"bytes"
-	"cloudx-adserver/platform"
+	"vectorspace/enclave"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -52,6 +55,11 @@ func fakeSidecar(embDim int) *httptest.Server {
 }
 
 func setupTestRouter(t *testing.T) (http.Handler, *platform.DB) {
+	router, db, _ := setupTestRouterWithProxy(t)
+	return router, db
+}
+
+func setupTestRouterWithProxy(t *testing.T) (http.Handler, *platform.DB, *tee.MockTEEProxy) {
 	t.Helper()
 	sidecar := fakeSidecar(3)
 	t.Cleanup(sidecar.Close)
@@ -74,13 +82,53 @@ func setupTestRouter(t *testing.T) (http.Handler, *platform.DB) {
 	engine := platform.NewAuctionEngine(registry, budgets, embedder)
 	engine.DB = db
 
+	proxy, err := tee.NewMockTEEProxy()
+	if err != nil {
+		t.Fatalf("NewMockTEEProxy: %v", err)
+	}
+
 	router := NewRouter(RouterConfig{
 		Registry: registry,
 		Budgets:  budgets,
 		Engine:   engine,
 		DB:       db,
+		TEEProxy: proxy,
 	})
-	return router, db
+	return router, db, proxy
+}
+
+// teeAdRequest creates an encrypted ad-request body for the TEE endpoint.
+// It syncs positions/budgets to the proxy, encrypts a query embedding, and POSTs.
+func teeAdRequest(t *testing.T, router http.Handler, proxy *tee.MockTEEProxy, positions []enclave.PositionSnapshot, budgets []enclave.BudgetSnapshot, publisherID string) *httptest.ResponseRecorder {
+	t.Helper()
+	proxy.SyncPositions(positions)
+	proxy.SyncBudgets(budgets)
+
+	queryEmbedding := []float64{0.01, 0.02, 0.03}
+	embJSON, _ := json.Marshal(queryEmbedding)
+	pubKey := proxy.KeyManagerPublicKey()
+	aesKeyEnc, payloadEnc, nonce, err := enclave.EncryptHybrid(embJSON, &pubKey, enclave.HashAlgorithmSHA256)
+	if err != nil {
+		t.Fatalf("EncryptHybrid: %v", err)
+	}
+
+	reqBody := map[string]interface{}{
+		"encrypted_embedding": enclave.EncryptedEmbedding{
+			AESKeyEncrypted:  aesKeyEnc,
+			EncryptedPayload: payloadEnc,
+			Nonce:            nonce,
+			HashAlgorithm:    "SHA-256",
+		},
+	}
+	if publisherID != "" {
+		reqBody["publisher_id"] = publisherID
+	}
+	body, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
 }
 
 func registerAdvertiser(t *testing.T, router http.Handler, name, intent string, sigma, bidPrice, budget float64) map[string]interface{} {
@@ -286,16 +334,23 @@ func TestDeleteAdvertiserNotFound(t *testing.T) {
 }
 
 func TestAdRequest(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	// Register 2 advertisers so we get a winner + runner-up
 	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
 	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
 
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query intent"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	w := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+			{ID: "adv-2", Name: "Adv2", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 3.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+			{AdvertiserID: "adv-2", Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 	if w.Code != http.StatusOK {
 		t.Fatalf("ad-request status = %d: %s", w.Code, w.Body.String())
 	}
@@ -303,54 +358,45 @@ func TestAdRequest(t *testing.T) {
 	var resp map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&resp)
 
-	if resp["winner"] == nil {
-		t.Error("expected winner in response")
-	}
-	if resp["runner_up"] == nil {
-		t.Error("expected runner_up with 2 advertisers")
-	}
-	if resp["all_bidders"] == nil {
-		t.Error("expected all_bidders array")
-	}
-	bidders, ok := resp["all_bidders"].([]interface{})
-	if !ok {
-		t.Fatal("expected all_bidders array in response")
-	}
-	if len(bidders) != 2 {
-		t.Errorf("all_bidders len = %d, want 2", len(bidders))
+	if resp["winner_id"] == nil || resp["winner_id"] == "" {
+		t.Error("expected winner_id in response")
 	}
 	if payment, ok := resp["payment"].(float64); !ok || payment <= 0 {
 		t.Errorf("payment = %v, want > 0", resp["payment"])
 	}
-	if resp["intent"] != "query intent" {
-		t.Errorf("intent = %v, want %q", resp["intent"], "query intent")
+	if resp["currency"] != "USD" {
+		t.Errorf("currency = %v, want USD", resp["currency"])
 	}
 }
 
 func TestAdRequestNoAdvertisers(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	router, _, proxy := setupTestRouterWithProxy(t)
+
+	w := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{},
+		[]enclave.BudgetSnapshot{},
+		"",
+	)
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 with no advertisers, got %d", w.Code)
 	}
 }
 
-func TestAdRequestMissingIntent(t *testing.T) {
+func TestAdRequestMissingEncryptedEmbedding(t *testing.T) {
 	router, _ := setupTestRouter(t)
-	body, _ := json.Marshal(map[string]interface{}{})
+	body, _ := json.Marshal(map[string]interface{}{
+		"encrypted_embedding": map[string]string{},
+	})
 	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for missing intent, got %d", w.Code)
+		t.Errorf("expected 400 for missing encrypted_embedding fields, got %d", w.Code)
 	}
 }
 
 func TestStatsEndpoint(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	// Initial stats should be zeroed
 	req := httptest.NewRequest("GET", "/stats", nil)
@@ -366,12 +412,17 @@ func TestStatsEndpoint(t *testing.T) {
 		t.Errorf("initial auction_count = %v, want 0", stats["auction_count"])
 	}
 
-	// Do an ad request
+	// Do a TEE ad request
 	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	adW := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 	if adW.Code != http.StatusOK {
 		t.Fatalf("ad-request failed: %d", adW.Code)
 	}
@@ -462,48 +513,6 @@ func TestRegisterMethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestAdRequestWithTau(t *testing.T) {
-	router, _ := setupTestRouter(t)
-
-	// Register 2 advertisers (both get same embedding from fakeSidecar, so dist²=0)
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
-
-	// tau=1.0 — both pass since dist²=0 < 1.0
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query", "tau": 1.0})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("ad-request with tau status = %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	bidders, ok := resp["all_bidders"].([]interface{})
-	if !ok {
-		t.Fatal("expected all_bidders array")
-	}
-	if len(bidders) != 2 {
-		t.Errorf("all_bidders len = %d, want 2 (both should pass tau with dist²=0)", len(bidders))
-	}
-}
-
-func TestAdRequestWithTauOmitted(t *testing.T) {
-	router, _ := setupTestRouter(t)
-
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-
-	// No tau field — should default to no filtering
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("ad-request without tau status = %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestAdRequestMethodNotAllowed(t *testing.T) {
 	router, _ := setupTestRouter(t)
 	req := httptest.NewRequest("GET", "/ad-request", nil)
@@ -515,14 +524,19 @@ func TestAdRequestMethodNotAllowed(t *testing.T) {
 }
 
 func TestStatsReset(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	// Run an auction to generate stats
 	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	adW := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 	if adW.Code != http.StatusOK {
 		t.Fatalf("ad-request failed: %d", adW.Code)
 	}
@@ -561,109 +575,6 @@ func TestStatsReset(t *testing.T) {
 func TestStatsMethodNotAllowed(t *testing.T) {
 	router, _ := setupTestRouter(t)
 	req := httptest.NewRequest("POST", "/stats", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
-	}
-}
-
-// --- /embeddings tests ---
-
-func TestEmbeddingsReturnsFormat(t *testing.T) {
-	router, _ := setupTestRouter(t)
-
-	// Register an advertiser so there's at least one embedding
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
-
-	req := httptest.NewRequest("GET", "/embeddings", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp struct {
-		Version    string `json:"version"`
-		Embeddings []struct {
-			ID        string    `json:"id"`
-			Embedding []float64 `json:"embedding"`
-		} `json:"embeddings"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-
-	if resp.Version == "" {
-		t.Error("expected non-empty version")
-	}
-	if len(resp.Embeddings) != 1 {
-		t.Fatalf("embeddings len = %d, want 1", len(resp.Embeddings))
-	}
-	if resp.Embeddings[0].ID == "" {
-		t.Error("expected non-empty embedding id")
-	}
-	if len(resp.Embeddings[0].Embedding) != 3 {
-		t.Errorf("embedding dim = %d, want 3", len(resp.Embeddings[0].Embedding))
-	}
-}
-
-func TestEmbeddingsETag(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
-
-	// First request: should return ETag
-	req := httptest.NewRequest("GET", "/embeddings", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	etag := w.Header().Get("ETag")
-	if etag == "" {
-		t.Fatal("expected ETag header")
-	}
-
-	// Second request with If-None-Match: should return 304
-	req = httptest.NewRequest("GET", "/embeddings", nil)
-	req.Header.Set("If-None-Match", etag)
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotModified {
-		t.Errorf("expected 304, got %d", w.Code)
-	}
-	if w.Body.Len() != 0 {
-		t.Errorf("expected empty body on 304, got %d bytes", w.Body.Len())
-	}
-}
-
-func TestEmbeddingsVersionChangesOnRegister(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 100.0)
-
-	// Get initial version
-	req := httptest.NewRequest("GET", "/embeddings", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	etag1 := w.Header().Get("ETag")
-
-	// Register another advertiser
-	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 100.0)
-
-	// Version should change
-	req = httptest.NewRequest("GET", "/embeddings", nil)
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	etag2 := w.Header().Get("ETag")
-
-	if etag1 == etag2 {
-		t.Error("ETag should change after registering a new advertiser")
-	}
-}
-
-func TestEmbeddingsMethodNotAllowed(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	req := httptest.NewRequest("POST", "/embeddings", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -720,149 +631,269 @@ func TestEmbedMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// --- /simulate tests ---
-
-func TestSimulateSuccess(t *testing.T) {
+func TestEmbeddingsEndpoint(t *testing.T) {
 	router, _ := setupTestRouter(t)
+
+	// No advertisers yet — should return empty list with ETag
+	req := httptest.NewRequest("GET", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	etag := w.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header")
+	}
+	var resp struct {
+		Embeddings []struct {
+			ID        string    `json:"id"`
+			Name      string    `json:"name"`
+			Embedding []float64 `json:"embedding"`
+			BidPrice  float64   `json:"bid_price"`
+			Sigma     float64   `json:"sigma"`
+			Currency  string    `json:"currency"`
+		} `json:"embeddings"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Embeddings) != 0 {
+		t.Errorf("expected 0 embeddings, got %d", len(resp.Embeddings))
+	}
+
+	// Register an advertiser
+	registerAdvertiser(t, router, "Dog Trainer", "dog training", 1.0, 5.0, 100.0)
+
+	// Should now return 1 embedding
+	req2 := httptest.NewRequest("GET", "/embeddings", nil)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+	newEtag := w2.Header().Get("ETag")
+	if newEtag == etag {
+		t.Error("expected ETag to change after registration")
+	}
+	var resp2 struct {
+		Embeddings []struct {
+			ID        string    `json:"id"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"embeddings"`
+	}
+	json.NewDecoder(w2.Body).Decode(&resp2)
+	if len(resp2.Embeddings) != 1 {
+		t.Fatalf("expected 1 embedding, got %d", len(resp2.Embeddings))
+	}
+	if len(resp2.Embeddings[0].Embedding) == 0 {
+		t.Error("expected non-empty embedding vector")
+	}
+
+	// If-None-Match should return 304
+	req3 := httptest.NewRequest("GET", "/embeddings", nil)
+	req3.Header.Set("If-None-Match", newEtag)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusNotModified {
+		t.Errorf("expected 304, got %d", w3.Code)
+	}
+}
+
+func TestEmbeddingsMethodNotAllowed(t *testing.T) {
+	router, _ := setupTestRouter(t)
+	req := httptest.NewRequest("POST", "/embeddings", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestPublisherLogBase(t *testing.T) {
+	_, db := setupTestRouter(t)
+
+	// Create publisher
+	if err := db.InsertPublisher("pub-1", "Test Publisher", "test.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default log base should be 5.0
+	logBase := db.GetPublisherLogBase("pub-1")
+	if logBase != 5.0 {
+		t.Errorf("expected default log_base 5.0, got %f", logBase)
+	}
+
+	// Set custom log base
+	if err := db.SetPublisherLogBase("pub-1", 20.0); err != nil {
+		t.Fatal(err)
+	}
+
+	logBase = db.GetPublisherLogBase("pub-1")
+	if logBase != 20.0 {
+		t.Errorf("expected log_base 20.0, got %f", logBase)
+	}
+
+	// Non-existent publisher should return default
+	logBase = db.GetPublisherLogBase("pub-nonexistent")
+	if logBase != 5.0 {
+		t.Errorf("expected default 5.0 for nonexistent publisher, got %f", logBase)
+	}
+}
+
+func TestCreativeCreateAndList(t *testing.T) {
+	router, db := setupTestRouter(t)
+	result := registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 100.0)
+	advID := result["id"].(string)
+	token, err := db.GenerateToken(advID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// POST: create creative
+	body, _ := json.Marshal(map[string]string{"title": "Buy Now", "subtitle": "Best deal"})
+	req := httptest.NewRequest("POST", "/portal/me/creatives?token="+token, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create creative status = %d: %s", w.Code, w.Body.String())
+	}
+	var created map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&created)
+	if created["title"] != "Buy Now" {
+		t.Errorf("title = %v, want %q", created["title"], "Buy Now")
+	}
+	if created["subtitle"] != "Best deal" {
+		t.Errorf("subtitle = %v, want %q", created["subtitle"], "Best deal")
+	}
+
+	// GET: list creatives
+	req = httptest.NewRequest("GET", "/portal/me/creatives?token="+token, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list creatives status = %d", w.Code)
+	}
+	var list []map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&list)
+	if len(list) != 1 {
+		t.Fatalf("expected 1 creative, got %d", len(list))
+	}
+	if list[0]["title"] != "Buy Now" {
+		t.Errorf("listed title = %v, want %q", list[0]["title"], "Buy Now")
+	}
+}
+
+func TestCreativeUpdateAndDelete(t *testing.T) {
+	router, db := setupTestRouter(t)
+	result := registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 100.0)
+	advID := result["id"].(string)
+	token, err := db.GenerateToken(advID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a creative
+	body, _ := json.Marshal(map[string]string{"title": "Old Title", "subtitle": "Old Sub"})
+	req := httptest.NewRequest("POST", "/portal/me/creatives?token="+token, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create creative status = %d", w.Code)
+	}
+	var created map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&created)
+	creativeID := int64(created["id"].(float64))
+
+	// PUT: update creative
+	body, _ = json.Marshal(map[string]string{"title": "New Title", "subtitle": "New Sub"})
+	req = httptest.NewRequest("PUT", fmt.Sprintf("/portal/me/creatives/%d?token=%s", creativeID, token), bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update creative status = %d: %s", w.Code, w.Body.String())
+	}
+	var updated map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&updated)
+	if updated["title"] != "New Title" {
+		t.Errorf("updated title = %v, want %q", updated["title"], "New Title")
+	}
+
+	// DELETE: remove creative
+	req = httptest.NewRequest("DELETE", fmt.Sprintf("/portal/me/creatives/%d?token=%s", creativeID, token), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete creative status = %d", w.Code)
+	}
+
+	// Verify gone
+	req = httptest.NewRequest("GET", "/portal/me/creatives?token="+token, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var list []map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&list)
+	if len(list) != 0 {
+		t.Errorf("expected 0 creatives after delete, got %d", len(list))
+	}
+}
+
+func TestCreativeInAdResponse(t *testing.T) {
+	router, db, proxy := setupTestRouterWithProxy(t)
 
 	// Register 2 advertisers
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
+	result1 := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
 
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	// Add creative to Adv1
+	advID := result1["id"].(string)
+	db.InsertCreative(advID, "My Ad Title", "My Ad Subtitle")
+
+	// Run TEE ad request — creative data is not in TEE response (only winner_id/payment)
+	// but verify the auction still runs successfully
+	w := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 	if w.Code != http.StatusOK {
-		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
+		t.Fatalf("ad-request status = %d: %s", w.Code, w.Body.String())
 	}
 
 	var resp map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&resp)
-
-	if resp["winner"] == nil {
-		t.Error("expected winner in response")
-	}
-	if resp["all_bidders"] == nil {
-		t.Error("expected all_bidders array")
-	}
-	bidders, ok := resp["all_bidders"].([]interface{})
-	if !ok {
-		t.Fatal("expected all_bidders to be an array")
-	}
-	if len(bidders) != 2 {
-		t.Errorf("all_bidders len = %d, want 2", len(bidders))
-	}
-	if resp["tau_thresholds"] == nil {
-		t.Error("expected tau_thresholds in response")
-	}
-	thresholds, ok := resp["tau_thresholds"].([]interface{})
-	if !ok {
-		t.Fatal("expected tau_thresholds to be an array")
-	}
-	if len(thresholds) == 0 {
-		t.Error("expected non-empty tau_thresholds")
-	}
-}
-
-func TestSimulateDoesNotLog(t *testing.T) {
-	router, _ := setupTestRouter(t)
-
-	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
-
-	// Simulate
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
-	}
-
-	// Check stats — should show 0 auctions
-	req = httptest.NewRequest("GET", "/stats", nil)
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	var stats map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&stats)
-	if count, _ := stats["auction_count"].(float64); count != 0 {
-		t.Errorf("auction_count = %v, want 0 (simulate should not log)", count)
-	}
-}
-
-func TestSimulateIncludesBudgetExhausted(t *testing.T) {
-	router, _ := setupTestRouter(t)
-
-	// Register advertiser with tiny budget (0.01) — normally excluded from real auctions once spent
-	registerAdvertiser(t, router, "Broke", "intent", 0.5, 2.0, 0.01)
-	registerAdvertiser(t, router, "Rich", "intent", 0.5, 3.0, 1000.0)
-
-	// Run a real auction to exhaust Broke's budget
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Now simulate — Broke should still appear
-	body, _ = json.Marshal(map[string]interface{}{"intent": "query"})
-	req = httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("simulate status = %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	bidders, ok := resp["all_bidders"].([]interface{})
-	if !ok {
-		t.Fatal("expected all_bidders array")
-	}
-	if len(bidders) != 2 {
-		t.Errorf("all_bidders len = %d, want 2 (budget-exhausted advertiser should still appear)", len(bidders))
-	}
-}
-
-func TestSimulateMissingIntent(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	body, _ := json.Marshal(map[string]interface{}{})
-	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for missing intent, got %d", w.Code)
-	}
-}
-
-func TestSimulateNoAdvertisers(t *testing.T) {
-	router, _ := setupTestRouter(t)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/simulate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 with no advertisers, got %d", w.Code)
+	if resp["winner_id"] != advID {
+		t.Errorf("winner_id = %v, want %q", resp["winner_id"], advID)
 	}
 }
 
 func TestAdRequestRevenueDistribution(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	// Register 2 advertisers so VCG payment < bid_price (creates exchange revenue)
 	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 5.0, 1000.0)
 	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
 
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("ad-request status = %d", w.Code)
+	adW := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 5.0, Currency: "USD"},
+			{ID: "adv-2", Name: "Adv2", Embedding: []float64{1.0, 1.0, 1.0}, Sigma: 0.5, BidPrice: 3.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+			{AdvertiserID: "adv-2", Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
+	if adW.Code != http.StatusOK {
+		t.Fatalf("ad-request status = %d", adW.Code)
 	}
 
 	// Check stats: publisher_revenue + exchange_revenue = total_spend
-	req = httptest.NewRequest("GET", "/stats", nil)
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/stats", nil)
+	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	var stats map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&stats)

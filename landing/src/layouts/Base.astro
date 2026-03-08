@@ -1,0 +1,52 @@
+---
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  navVariant?: 'home' | 'sub';
+  footerLinks?: boolean;
+  class?: string;
+}
+
+const {
+  title,
+  description = 'Semantic intent matching, VCG fair pricing, and privacy-first design. The ad exchange built for the AI era.',
+  navVariant = 'sub',
+  footerLinks = true,
+  class: className = '',
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <script src="https://cdn.tailwindcss.com" is:inline></script>
+  <script is:inline>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 100: '#e0e7ff', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#312e81' },
+          }
+        }
+      }
+    }
+  </script>
+  <style is:inline>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .gradient-text { background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  </style>
+</head>
+<body class:list={['dark bg-gray-950 text-gray-100', className]}>
+  <Nav variant={navVariant} />
+  <slot />
+  <Footer showLinks={footerLinks} />
+</body>
+</html>

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.cloudx.sdk"
+    namespace = "dev.vectorspace.sdk"
     compileSdk = 34
 
     defaultConfig {

@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"cloudx-adserver/platform"
+	"vectorspace/platform"
 	"encoding/json"
 	"net/http"
 	"strings"

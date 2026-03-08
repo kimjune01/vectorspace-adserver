@@ -3,12 +3,12 @@ import type {
   RevenuePeriod,
   AdvertiserSpend,
   AdvertiserWithBudget,
+  Creative,
   EventStats,
   PortalProfile,
   PublisherInfo,
   PublisherProfile,
   PublisherStats,
-  SimulationResult,
 } from './types';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -60,6 +60,50 @@ export async function getMyEvents(token: string): Promise<EventStats> {
   const resp = await fetch(`${API}/portal/me/events?token=${token}`);
   if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
+}
+
+// --- Creatives ---
+
+export async function getCreatives(token: string): Promise<Creative[]> {
+  const resp = await fetch(`${API}/portal/me/creatives?token=${token}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+export async function createCreative(
+  token: string,
+  title: string,
+  subtitle: string
+): Promise<Creative> {
+  const resp = await fetch(`${API}/portal/me/creatives?token=${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, subtitle }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+export async function updateCreative(
+  token: string,
+  id: number,
+  title: string,
+  subtitle: string
+): Promise<Creative> {
+  const resp = await fetch(`${API}/portal/me/creatives/${id}?token=${token}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, subtitle }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+export async function deleteCreative(token: string, id: number): Promise<void> {
+  const resp = await fetch(`${API}/portal/me/creatives/${id}?token=${token}`, {
+    method: 'DELETE',
+  });
+  if (!resp.ok) throw new Error(await resp.text());
 }
 
 // --- Admin Auth ---
@@ -217,18 +261,6 @@ export async function getPublisherTopAdvertisers(
   limit = 10
 ): Promise<AdvertiserSpend[]> {
   const resp = await fetch(`${API}/portal/publisher/top-advertisers?token=${token}&limit=${limit}`);
-  if (!resp.ok) throw new Error(await resp.text());
-  return resp.json();
-}
-
-// --- Simulation (public, no auth) ---
-
-export async function simulateAuction(intent: string): Promise<SimulationResult> {
-  const resp = await fetch(`${API}/simulate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ intent }),
-  });
   if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
 }

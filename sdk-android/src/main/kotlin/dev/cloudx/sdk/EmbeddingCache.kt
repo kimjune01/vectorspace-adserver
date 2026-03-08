@@ -1,4 +1,4 @@
-package dev.cloudx.sdk
+package dev.vectorspace.sdk
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -33,11 +33,11 @@ internal class EmbeddingCache(
             }
 
             if (!resp.isSuccessful) {
-                throw CloudXException("Failed to fetch embeddings: HTTP ${resp.code}")
+                throw VectorSpaceException("Failed to fetch embeddings: HTTP ${resp.code}")
             }
 
             val body = resp.body?.string()
-                ?: throw CloudXException("Empty response body from /embeddings")
+                ?: throw VectorSpaceException("Empty response body from /embeddings")
             val json = JSONObject(body)
             val embeddingsArray = json.getJSONArray("embeddings")
 
@@ -85,6 +85,6 @@ internal class EmbeddingCache(
 }
 
 /**
- * Exception thrown by the CloudX SDK for server or protocol errors.
+ * Exception thrown by the VectorSpace SDK for server or protocol errors.
  */
-class CloudXException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class VectorSpaceException(message: String, cause: Throwable? = null) : Exception(message, cause)

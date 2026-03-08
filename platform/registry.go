@@ -22,6 +22,15 @@ type Position struct {
 	URL       string    `json:"url"`
 }
 
+// RelocationFeeConfig controls the fee schedule for position changes.
+type RelocationFeeConfig struct {
+	// EntryBond is the flat fee charged on initial registration (default 0).
+	EntryBond float64
+	// DistanceFactor multiplied by sqrt(distance²) gives the move cost.
+	// Fee = DistanceFactor * sqrt(distanceMoved). Default 0 (no move fees).
+	DistanceFactor float64
+}
+
 // PositionRegistry stores advertiser positions with thread-safe access.
 // When a DB is set, it persists changes and uses in-memory cache for reads.
 type PositionRegistry struct {
@@ -30,6 +39,10 @@ type PositionRegistry struct {
 	nextID    atomic.Int64
 	Embedder  *Embedder
 	db        *DB
+	budgets   *BudgetTracker
+
+	// Relocation fee config
+	RelocationFees RelocationFeeConfig
 
 	// Cached embedding version hash; invalidated on mutation.
 	embeddingsVersion string
@@ -40,6 +53,11 @@ func NewPositionRegistry(embedder *Embedder) *PositionRegistry {
 		positions: make(map[string]*Position),
 		Embedder:  embedder,
 	}
+}
+
+// SetBudgetTracker attaches a budget tracker for charging relocation fees.
+func (r *PositionRegistry) SetBudgetTracker(bt *BudgetTracker) {
+	r.budgets = bt
 }
 
 // SetDB attaches a database and loads existing advertisers into the in-memory cache.
@@ -96,6 +114,8 @@ func (r *PositionRegistry) Register(name, intent string, sigma, bidPrice float64
 }
 
 // RegisterWithBudget registers and persists to DB with budget.
+// Records the entry bond in position history. The caller (handler) is responsible
+// for charging the entry bond from the budget after calling Budgets.Set.
 func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPrice, budget float64, currency, url string) (*Position, error) {
 	pos, err := r.Register(name, intent, sigma, bidPrice, currency, url)
 	if err != nil {
@@ -106,9 +126,19 @@ func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPri
 		if err := r.db.InsertAdvertiser(pos, budget); err != nil {
 			return nil, fmt.Errorf("persist advertiser: %w", err)
 		}
+		// Record initial position with entry bond amount
+		r.db.RecordPositionChange(pos.ID, pos.Intent, pos.Embedding, pos.Sigma, pos.BidPrice, 0, r.RelocationFees.EntryBond)
 	}
 
 	return pos, nil
+}
+
+// ComputeRelocationFee calculates the fee for moving a position by the given distance².
+func (r *PositionRegistry) ComputeRelocationFee(distanceSquared float64) float64 {
+	if distanceSquared <= 0 || r.RelocationFees.DistanceFactor <= 0 {
+		return 0
+	}
+	return r.RelocationFees.DistanceFactor * math.Sqrt(distanceSquared)
 }
 
 // Update modifies an existing advertiser. Re-embeds if intent changed.
@@ -166,9 +196,33 @@ func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice 
 		if err := r.db.UpdateAdvertiser(id, name, intent, embedding, sigma, bidPrice, url); err != nil {
 			return nil, fmt.Errorf("persist update: %w", err)
 		}
+		// Compute distance moved and relocation fee
+		distMoved := squaredEuclidean(existing.Embedding, embedding)
+		var relocationFee float64
+		if distMoved > 0 && r.RelocationFees.DistanceFactor > 0 {
+			relocationFee = r.RelocationFees.DistanceFactor * math.Sqrt(distMoved)
+			// Charge from budget
+			if r.budgets != nil {
+				r.budgets.Charge(id, relocationFee)
+			}
+		}
+		r.db.RecordPositionChange(id, intent, embedding, sigma, bidPrice, distMoved, relocationFee)
 	}
 
 	return updated, nil
+}
+
+// squaredEuclidean computes ||a - b||² between two vectors.
+func squaredEuclidean(a, b []float64) float64 {
+	sum := 0.0
+	for i := range a {
+		if i >= len(b) {
+			break
+		}
+		d := a[i] - b[i]
+		sum += d * d
+	}
+	return sum
 }
 
 // Delete removes an advertiser.

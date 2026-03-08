@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"cloudx-adserver/platform"
+	"vectorspace/platform"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type PortalHandler struct {
@@ -187,6 +188,136 @@ func (h *PortalHandler) HandlePortalEvents(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// HandlePortalCreatives handles GET/POST /portal/me/creatives?token=xxx
+func (h *PortalHandler) HandlePortalCreatives(w http.ResponseWriter, r *http.Request) {
+	advertiserID, err := h.authenticateToken(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		creatives, err := h.DB.GetCreativesByAdvertiser(advertiserID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if creatives == nil {
+			creatives = []platform.Creative{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(creatives)
+
+	case http.MethodPost:
+		var req struct {
+			Title    string `json:"title"`
+			Subtitle string `json:"subtitle"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Title == "" {
+			http.Error(w, "title is required", http.StatusBadRequest)
+			return
+		}
+
+		id, err := h.DB.InsertCreative(advertiserID, req.Title, req.Subtitle)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(platform.Creative{
+			ID:           id,
+			AdvertiserID: advertiserID,
+			Title:        req.Title,
+			Subtitle:     req.Subtitle,
+			Active:       true,
+		})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandlePortalCreative handles PUT/DELETE /portal/me/creatives/{id}?token=xxx
+func (h *PortalHandler) HandlePortalCreative(w http.ResponseWriter, r *http.Request) {
+	advertiserID, err := h.authenticateToken(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	// Extract creative ID from path: /portal/me/creatives/123
+	path := r.URL.Path
+	idStr := strings.TrimPrefix(path, "/portal/me/creatives/")
+	creativeID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid creative id", http.StatusBadRequest)
+		return
+	}
+
+	// Verify creative belongs to this advertiser
+	creatives, err := h.DB.GetCreativesByAdvertiser(advertiserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	owned := false
+	for _, c := range creatives {
+		if c.ID == creativeID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		http.Error(w, "creative not found", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		var req struct {
+			Title    string `json:"title"`
+			Subtitle string `json:"subtitle"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Title == "" {
+			http.Error(w, "title is required", http.StatusBadRequest)
+			return
+		}
+		if err := h.DB.UpdateCreative(creativeID, req.Title, req.Subtitle); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(platform.Creative{
+			ID:           creativeID,
+			AdvertiserID: advertiserID,
+			Title:        req.Title,
+			Subtitle:     req.Subtitle,
+			Active:       true,
+		})
+
+	case http.MethodDelete:
+		if err := h.DB.DeleteCreative(creativeID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // --- Admin endpoints ---

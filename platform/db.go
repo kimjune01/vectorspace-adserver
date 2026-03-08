@@ -91,6 +91,7 @@ func (db *DB) createTables() error {
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		domain TEXT NOT NULL DEFAULT '',
+		log_base REAL NOT NULL DEFAULT 5.0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -106,6 +107,38 @@ func (db *DB) createTables() error {
 		password_hash TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS creatives (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		advertiser_id TEXT NOT NULL REFERENCES advertisers(id) ON DELETE CASCADE,
+		title TEXT NOT NULL,
+		subtitle TEXT NOT NULL DEFAULT '',
+		active INTEGER NOT NULL DEFAULT 1,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS intake_submissions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		type TEXT NOT NULL,
+		name TEXT NOT NULL,
+		email TEXT NOT NULL,
+		company TEXT NOT NULL DEFAULT '',
+		detail TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS position_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		advertiser_id TEXT NOT NULL REFERENCES advertisers(id) ON DELETE CASCADE,
+		intent TEXT NOT NULL,
+		embedding TEXT NOT NULL,
+		sigma REAL NOT NULL,
+		bid_price REAL NOT NULL,
+		distance_moved REAL NOT NULL DEFAULT 0,
+		relocation_fee REAL NOT NULL DEFAULT 0,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	if _, err := db.conn.Exec(schema); err != nil {
 		return fmt.Errorf("create tables: %w", err)
@@ -119,6 +152,11 @@ func (db *DB) createTables() error {
 	// Idempotent migration: add url to advertisers
 	if err := db.migrateAdvertiserURL(); err != nil {
 		return fmt.Errorf("migrate advertiser url: %w", err)
+	}
+
+	// Idempotent migration: add log_base to publishers
+	if err := db.migratePublisherLogBase(); err != nil {
+		return fmt.Errorf("migrate publisher log_base: %w", err)
 	}
 
 	return nil
@@ -188,9 +226,45 @@ func (db *DB) migrateAdvertiserURL() error {
 	return nil
 }
 
+func (db *DB) migratePublisherLogBase() error {
+	var hasColumn bool
+	rows, err := db.conn.Query("PRAGMA table_info(publishers)")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "log_base" {
+			hasColumn = true
+		}
+	}
+	rows.Close()
+
+	if !hasColumn {
+		_, err := db.conn.Exec("ALTER TABLE publishers ADD COLUMN log_base REAL NOT NULL DEFAULT 5.0")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Close closes the database connection.
 func (db *DB) Close() error {
 	return db.conn.Close()
+}
+
+// Exec runs a raw SQL statement. Used for seed data with custom timestamps.
+func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	return db.conn.Exec(query, args...)
 }
 
 // InsertAdvertiser stores a position and its budget in the advertisers table.
@@ -302,6 +376,105 @@ func (db *DB) DeleteAdvertiser(id string) error {
 		return fmt.Errorf("advertiser %s not found", id)
 	}
 	return nil
+}
+
+// --- Position History ---
+
+// PositionHistoryEntry represents a snapshot of an advertiser's position at a point in time.
+type PositionHistoryEntry struct {
+	ID             int64   `json:"id"`
+	AdvertiserID   string  `json:"advertiser_id"`
+	Intent         string  `json:"intent"`
+	Sigma          float64 `json:"sigma"`
+	BidPrice       float64 `json:"bid_price"`
+	DistanceMoved  float64 `json:"distance_moved"`
+	RelocationFee  float64 `json:"relocation_fee"`
+	CreatedAt      string  `json:"created_at"`
+}
+
+// RecordPositionChange inserts a position history entry.
+// distanceMoved is the squared Euclidean distance from the previous embedding.
+// relocationFee is the fee charged for this move (0 for initial registration).
+func (db *DB) RecordPositionChange(advertiserID, intent string, embedding []float64, sigma, bidPrice, distanceMoved, relocationFee float64) error {
+	embJSON, err := json.Marshal(embedding)
+	if err != nil {
+		return fmt.Errorf("marshal embedding: %w", err)
+	}
+	_, err = db.conn.Exec(
+		`INSERT INTO position_history (advertiser_id, intent, embedding, sigma, bid_price, distance_moved, relocation_fee) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		advertiserID, intent, string(embJSON), sigma, bidPrice, distanceMoved, relocationFee,
+	)
+	if err != nil {
+		return fmt.Errorf("record position change: %w", err)
+	}
+	return nil
+}
+
+// GetPositionHistory returns the position history for an advertiser, newest first.
+func (db *DB) GetPositionHistory(advertiserID string, limit int) ([]PositionHistoryEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := db.conn.Query(
+		`SELECT id, advertiser_id, intent, sigma, bid_price, distance_moved, relocation_fee, created_at
+		 FROM position_history WHERE advertiser_id = ? ORDER BY id DESC LIMIT ?`,
+		advertiserID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get position history: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []PositionHistoryEntry
+	for rows.Next() {
+		var e PositionHistoryEntry
+		if err := rows.Scan(&e.ID, &e.AdvertiserID, &e.Intent, &e.Sigma, &e.BidPrice, &e.DistanceMoved, &e.RelocationFee, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan position history: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// GetPositionCount returns how many position changes an advertiser has made.
+func (db *DB) GetPositionCount(advertiserID string) (int, error) {
+	var count int
+	err := db.conn.QueryRow(
+		`SELECT COUNT(*) FROM position_history WHERE advertiser_id = ?`, advertiserID,
+	).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetTenureDays returns the number of days since the advertiser's last position change.
+// Returns 0 if no history exists.
+func (db *DB) GetTenureDays(advertiserID string) (float64, error) {
+	var days float64
+	err := db.conn.QueryRow(
+		`SELECT JULIANDAY('now') - JULIANDAY(MAX(created_at)) FROM position_history WHERE advertiser_id = ?`,
+		advertiserID,
+	).Scan(&days)
+	if err != nil {
+		return 0, nil
+	}
+	return days, nil
+}
+
+// GetTotalRelocationFees returns the sum of all relocation fees collected.
+func (db *DB) GetTotalRelocationFees() (float64, error) {
+	var total sql.NullFloat64
+	err := db.conn.QueryRow(
+		`SELECT SUM(relocation_fee) FROM position_history WHERE relocation_fee > 0`,
+	).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Float64, nil
 }
 
 // BudgetRow holds budget info from the DB.
@@ -847,16 +1020,17 @@ func (db *DB) LogEventWithPublisher(auctionID int64, advertiserID, eventType, us
 
 // Publisher represents a publisher in the system.
 type Publisher struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Domain    string `json:"domain"`
-	CreatedAt string `json:"created_at"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Domain    string  `json:"domain"`
+	LogBase   float64 `json:"log_base"`
+	CreatedAt string  `json:"created_at"`
 }
 
 // GetAllPublishers returns all publishers ordered by ID.
 func (db *DB) GetAllPublishers() ([]Publisher, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, name, domain, created_at FROM publishers ORDER BY id`,
+		`SELECT id, name, domain, log_base, created_at FROM publishers ORDER BY id`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get all publishers: %w", err)
@@ -866,7 +1040,7 @@ func (db *DB) GetAllPublishers() ([]Publisher, error) {
 	var publishers []Publisher
 	for rows.Next() {
 		var p Publisher
-		if err := rows.Scan(&p.ID, &p.Name, &p.Domain, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Domain, &p.LogBase, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan publisher: %w", err)
 		}
 		publishers = append(publishers, p)
@@ -890,8 +1064,8 @@ func (db *DB) InsertPublisher(id, name, domain string) error {
 func (db *DB) GetPublisher(id string) (*Publisher, error) {
 	var p Publisher
 	err := db.conn.QueryRow(
-		`SELECT id, name, domain, created_at FROM publishers WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Domain, &p.CreatedAt)
+		`SELECT id, name, domain, log_base, created_at FROM publishers WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Domain, &p.LogBase, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -899,6 +1073,30 @@ func (db *DB) GetPublisher(id string) (*Publisher, error) {
 		return nil, fmt.Errorf("get publisher: %w", err)
 	}
 	return &p, nil
+}
+
+// GetPublisherLogBase returns the publisher's log base setting.
+// Returns DefaultLogBase (5.0) if publisher not found.
+func (db *DB) GetPublisherLogBase(publisherID string) float64 {
+	var logBase float64
+	err := db.conn.QueryRow(
+		`SELECT log_base FROM publishers WHERE id = ?`, publisherID,
+	).Scan(&logBase)
+	if err != nil || logBase <= 0 {
+		return 5.0
+	}
+	return logBase
+}
+
+// SetPublisherLogBase updates the publisher's log base setting.
+func (db *DB) SetPublisherLogBase(publisherID string, logBase float64) error {
+	_, err := db.conn.Exec(
+		`UPDATE publishers SET log_base = ? WHERE id = ?`, logBase, publisherID,
+	)
+	if err != nil {
+		return fmt.Errorf("set publisher log_base: %w", err)
+	}
+	return nil
 }
 
 // NextPublisherID returns the next publisher ID based on current max.
@@ -1144,4 +1342,146 @@ func (db *DB) GetPublisherToken(publisherID string) (string, error) {
 		return "", fmt.Errorf("get publisher token: %w", err)
 	}
 	return token, nil
+}
+
+// --- Creative Management ---
+
+// Creative represents an ad creative (title + subtitle).
+type Creative struct {
+	ID           int64  `json:"id"`
+	AdvertiserID string `json:"advertiser_id"`
+	Title        string `json:"title"`
+	Subtitle     string `json:"subtitle"`
+	Active       bool   `json:"active"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// InsertCreative creates a new creative for an advertiser.
+func (db *DB) InsertCreative(advertiserID, title, subtitle string) (int64, error) {
+	result, err := db.conn.Exec(
+		`INSERT INTO creatives (advertiser_id, title, subtitle) VALUES (?, ?, ?)`,
+		advertiserID, title, subtitle,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert creative: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// UpdateCreative updates the title and subtitle of a creative.
+func (db *DB) UpdateCreative(id int64, title, subtitle string) error {
+	result, err := db.conn.Exec(
+		`UPDATE creatives SET title = ?, subtitle = ? WHERE id = ?`,
+		title, subtitle, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update creative: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("creative %d not found", id)
+	}
+	return nil
+}
+
+// DeleteCreative removes a creative by ID.
+func (db *DB) DeleteCreative(id int64) error {
+	result, err := db.conn.Exec(`DELETE FROM creatives WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete creative: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("creative %d not found", id)
+	}
+	return nil
+}
+
+// GetCreativesByAdvertiser returns all creatives for an advertiser.
+func (db *DB) GetCreativesByAdvertiser(advertiserID string) ([]Creative, error) {
+	rows, err := db.conn.Query(
+		`SELECT id, advertiser_id, title, subtitle, active, created_at FROM creatives WHERE advertiser_id = ? ORDER BY id DESC`,
+		advertiserID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get creatives: %w", err)
+	}
+	defer rows.Close()
+
+	var creatives []Creative
+	for rows.Next() {
+		var c Creative
+		var active int
+		if err := rows.Scan(&c.ID, &c.AdvertiserID, &c.Title, &c.Subtitle, &active, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan creative: %w", err)
+		}
+		c.Active = active == 1
+		creatives = append(creatives, c)
+	}
+	return creatives, rows.Err()
+}
+
+// GetActiveCreative returns the most recent active creative for an advertiser, or nil if none.
+func (db *DB) GetActiveCreative(advertiserID string) (*Creative, error) {
+	var c Creative
+	var active int
+	err := db.conn.QueryRow(
+		`SELECT id, advertiser_id, title, subtitle, active, created_at FROM creatives WHERE advertiser_id = ? AND active = 1 ORDER BY id DESC LIMIT 1`,
+		advertiserID,
+	).Scan(&c.ID, &c.AdvertiserID, &c.Title, &c.Subtitle, &active, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get active creative: %w", err)
+	}
+	c.Active = active == 1
+	return &c, nil
+}
+
+// --- Intake Submissions ---
+
+// IntakeSubmission represents a publisher or advertiser intake form submission.
+type IntakeSubmission struct {
+	ID          int64  `json:"id"`
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	Company     string `json:"company"`
+	Detail      string `json:"detail"`
+	Description string `json:"description"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// InsertIntakeSubmission stores a new intake form submission.
+func (db *DB) InsertIntakeSubmission(submissionType, name, email, company, detail, description string) (int64, error) {
+	result, err := db.conn.Exec(
+		`INSERT INTO intake_submissions (type, name, email, company, detail, description) VALUES (?, ?, ?, ?, ?, ?)`,
+		submissionType, name, email, company, detail, description,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert intake submission: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// GetIntakeSubmissions returns all intake submissions, newest first.
+func (db *DB) GetIntakeSubmissions() ([]IntakeSubmission, error) {
+	rows, err := db.conn.Query(
+		`SELECT id, type, name, email, company, detail, description, created_at FROM intake_submissions ORDER BY id DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get intake submissions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []IntakeSubmission
+	for rows.Next() {
+		var s IntakeSubmission
+		if err := rows.Scan(&s.ID, &s.Type, &s.Name, &s.Email, &s.Company, &s.Detail, &s.Description, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan intake submission: %w", err)
+		}
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
 }

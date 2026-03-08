@@ -1,11 +1,11 @@
 # CloudX Ad Server — Build & Deploy
 
-.PHONY: dev staging prod test build-server build-portal clean
+.PHONY: dev staging prod test build-server build-portal build-landing clean deploy
 
 # ── Development ──────────────────────────────────────────────────
 
 dev: ## Start dev server (in-memory DB, seeded, sidecar on 8081)
-	go run ./cmd/server/ -db-path=cloudx-dev.db -seed -sidecar-url=http://localhost:8081
+	go run ./cmd/server/ -db-path=vectorspace-dev.db -seed -sidecar-url=http://localhost:8081
 
 dev-portal: ## Start portal dev server
 	cd portal && pnpm dev
@@ -21,7 +21,7 @@ test-portal: ## Type-check and build portal
 # ── Build ────────────────────────────────────────────────────────
 
 build-server: ## Build Go server binary
-	CGO_ENABLED=0 go build -o bin/cloudx-server ./cmd/server/
+	CGO_ENABLED=0 go build -o bin/vectorspace-server ./cmd/server/
 
 build-portal-staging: ## Build portal for staging
 	cd portal && npx vite build --mode staging
@@ -29,38 +29,46 @@ build-portal-staging: ## Build portal for staging
 build-portal-prod: ## Build portal for production
 	cd portal && npx vite build --mode production
 
-build: build-server build-portal-prod ## Build everything for production
+build-landing: ## Build landing site (Astro)
+	cd landing && pnpm build
+
+build: build-server build-portal-prod build-landing ## Build everything for production
 
 # ── Staging ──────────────────────────────────────────────────────
 
 staging: build-server build-portal-staging ## Build for staging
 	@echo "Staging build complete:"
-	@echo "  Server: bin/cloudx-server"
+	@echo "  Server: bin/vectorspace-server"
 	@echo "  Portal: portal/dist/"
 	@echo ""
-	@echo "Run: ./bin/cloudx-server -db-path=cloudx-staging.db -seed"
+	@echo "Run: ./bin/vectorspace-server -db-path=vectorspace-staging.db -seed"
 
 # ── Production ───────────────────────────────────────────────────
 
 prod: build ## Build for production
 	@echo "Production build complete:"
-	@echo "  Server: bin/cloudx-server"
+	@echo "  Server: bin/vectorspace-server"
 	@echo "  Portal: portal/dist/"
 	@echo ""
-	@echo "Run: ./bin/cloudx-server -db-path=/var/lib/cloudx/prod.db"
+	@echo "Run: ./bin/vectorspace-server -db-path=/var/lib/vectorspace/prod.db"
 
 # ── Docker ───────────────────────────────────────────────────────
 
 docker-build: ## Build Docker image
-	docker build -t cloudx-adserver .
+	docker build -t vectorspace .
 
 docker-run-dev: ## Run in Docker (dev)
-	docker run -p 8080:8080 -e ANTHROPIC_API_KEY cloudx-adserver -db-path=/data/cloudx.db -seed
+	docker run -p 8080:8080 -e ANTHROPIC_API_KEY vectorspace -db-path=/data/vectorspace.db -seed
+
+# ── Deploy ───────────────────────────────────────────────────────
+
+deploy: ## Deploy infrastructure to AWS
+	cd infra && set -a && . ./.env && set +a && pulumi up --stack dev
 
 # ── Clean ────────────────────────────────────────────────────────
 
 clean: ## Remove build artifacts
-	rm -rf bin/ portal/dist/
+	rm -rf bin/ portal/dist/ landing/dist/
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

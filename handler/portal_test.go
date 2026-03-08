@@ -2,7 +2,9 @@ package handler
 
 import (
 	"bytes"
-	"cloudx-adserver/platform"
+	"vectorspace/enclave"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,31 +15,36 @@ import (
 // --- Event Tracking Tests ---
 
 func TestImpressionEvent(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
 	advID := result["id"].(string)
 
-	// Run an auction to get an auction_id
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("ad-request failed: %d", w.Code)
+	// Run a TEE auction to get an auction_id
+	adW := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
+	if adW.Code != http.StatusOK {
+		t.Fatalf("ad-request failed: %d", adW.Code)
 	}
 	var adResp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&adResp)
+	json.NewDecoder(adW.Body).Decode(&adResp)
 	auctionID := adResp["auction_id"].(float64)
 
 	// Log impression
-	body, _ = json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]interface{}{
 		"auction_id":    auctionID,
 		"advertiser_id": advID,
 		"user_id":       "u1",
 	})
-	req = httptest.NewRequest("POST", "/event/impression", bytes.NewReader(body))
-	w = httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/event/impression", bytes.NewReader(body))
+	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("impression status = %d: %s", w.Code, w.Body.String())
@@ -224,16 +231,22 @@ func TestPortalMeUpdate(t *testing.T) {
 }
 
 func TestPortalAuctions(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
 	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
 	token := result["token"].(string)
+	advID := result["id"].(string)
 
-	// Run an auction
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	// Run a TEE auction
+	teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 
 	req := httptest.NewRequest("GET", "/portal/me/auctions?token="+token, nil)
 	w := httptest.NewRecorder()
@@ -282,13 +295,19 @@ func TestPortalEvents(t *testing.T) {
 // --- Admin Tests ---
 
 func TestAdminAuctions(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
+	teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 
 	req := httptest.NewRequest("GET", "/admin/auctions?limit=10", nil)
 	w := httptest.NewRecorder()
@@ -306,13 +325,19 @@ func TestAdminAuctions(t *testing.T) {
 }
 
 func TestAdminAuctionsCSV(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
+	teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 
 	req := httptest.NewRequest("GET", "/admin/auctions?format=csv", nil)
 	w := httptest.NewRecorder()
@@ -329,13 +354,19 @@ func TestAdminAuctionsCSV(t *testing.T) {
 }
 
 func TestAdminRevenue(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
+	teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 
 	req := httptest.NewRequest("GET", "/admin/revenue?group_by=day", nil)
 	w := httptest.NewRecorder()
@@ -352,13 +383,19 @@ func TestAdminRevenue(t *testing.T) {
 }
 
 func TestAdminTopAdvertisers(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	adReq := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	adW := httptest.NewRecorder()
-	router.ServeHTTP(adW, adReq)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
+	teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 
 	req := httptest.NewRequest("GET", "/admin/top-advertisers?limit=5", nil)
 	w := httptest.NewRecorder()
@@ -424,14 +461,20 @@ func TestAdminEvents(t *testing.T) {
 }
 
 func TestAdRequestReturnsAuctionID(t *testing.T) {
-	router, _ := setupTestRouter(t)
+	router, _, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
 
-	body, _ := json.Marshal(map[string]interface{}{"intent": "query"})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	w := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"",
+	)
 	if w.Code != http.StatusOK {
 		t.Fatalf("ad-request status = %d: %s", w.Code, w.Body.String())
 	}
@@ -664,18 +707,21 @@ func TestPublisherPortalTopAdvertisers(t *testing.T) {
 }
 
 func TestAdRequestWithPublisherID(t *testing.T) {
-	router, db := setupTestRouter(t)
+	router, db, proxy := setupTestRouterWithProxy(t)
 
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	advID := result["id"].(string)
 	registerPublisher(t, router, "TechBlog", "techblog.com")
 
-	body, _ := json.Marshal(map[string]interface{}{
-		"intent":       "query",
-		"publisher_id": "pub-1",
-	})
-	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	w := teeAdRequest(t, router, proxy,
+		[]enclave.PositionSnapshot{
+			{ID: advID, Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+		},
+		[]enclave.BudgetSnapshot{
+			{AdvertiserID: advID, Total: 1000, Spent: 0, Currency: "USD"},
+		},
+		"pub-1",
+	)
 	if w.Code != http.StatusOK {
 		t.Fatalf("ad-request status = %d: %s", w.Code, w.Body.String())
 	}
@@ -718,12 +764,18 @@ func setupTestRouterWithPassword(t *testing.T, password string) (http.Handler, *
 	engine := platform.NewAuctionEngine(registry, budgets, embedder)
 	engine.DB = db
 
+	proxy, err := tee.NewMockTEEProxy()
+	if err != nil {
+		t.Fatalf("NewMockTEEProxy: %v", err)
+	}
+
 	router := NewRouter(RouterConfig{
 		Registry:      registry,
 		Budgets:       budgets,
 		Engine:        engine,
 		DB:            db,
 		AdminPassword: password,
+		TEEProxy:      proxy,
 	})
 	return router, db
 }

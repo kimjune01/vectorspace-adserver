@@ -1,0 +1,24 @@
+---
+interface Props {
+  /** Show full nav links (home page) vs back link (sub-pages) */
+  variant?: 'home' | 'sub';
+}
+
+const { variant = 'sub' } = Astro.props;
+---
+
+<nav class="fixed top-0 w-full z-50 bg-gray-950/80 backdrop-blur border-b border-gray-800">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    {variant === 'home' ? (
+      <div class="text-lg font-bold tracking-tight">vectorspace<span class="text-brand-400">.exchange</span></div>
+      <div class="flex items-center gap-6">
+        <a href="/how-it-works" class="text-sm text-gray-400 hover:text-white transition">How it works</a>
+        <a href="#features" class="text-sm text-gray-400 hover:text-white transition">Features</a>
+        <a href="/get-started" class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg transition">Get Started</a>
+      </div>
+    ) : (
+      <a href="/" class="text-lg font-bold tracking-tight">vectorspace<span class="text-brand-400">.exchange</span></a>
+      <a href="/" class="text-sm text-gray-400 hover:text-white transition">&larr; Back</a>
+    )}
+  </div>
+</nav>

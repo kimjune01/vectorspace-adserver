@@ -16,17 +16,27 @@ func validateBidPrices(bids []CoreBid) (valid []CoreBid, rejectedBidIDs []string
 	return validBids, rejectedIDs
 }
 
-// RunAuction executes the core auction logic:
-// price validation → floor enforcement → ranking.
-//
-// Parameters:
-//   - bids: Input bids
-//   - bidFloor: Floor price (applies to price, not score)
-//   - queryEmbedding: (optional) If provided, enables embedding-space scoring
+// RunAuction executes the core auction logic using the global LogBase.
+// For per-publisher log base, use RunAuctionWithBase.
 func RunAuction(
 	bids []CoreBid,
 	bidFloor float64,
 	queryEmbedding ...[]float64,
+) *AuctionResult {
+	var qe []float64
+	if len(queryEmbedding) > 0 {
+		qe = queryEmbedding[0]
+	}
+	return RunAuctionWithBase(bids, bidFloor, LogBase, qe)
+}
+
+// RunAuctionWithBase executes the core auction logic with a configurable log base:
+// price validation → floor enforcement → ranking.
+func RunAuctionWithBase(
+	bids []CoreBid,
+	bidFloor float64,
+	logBase float64,
+	queryEmbedding []float64,
 ) *AuctionResult {
 	// Step 1: Validate bid prices
 	validBids, priceRejectedBids := validateBidPrices(bids)
@@ -37,13 +47,13 @@ func RunAuction(
 	// Step 4: Rank eligible bids
 	var ranking *CoreRankingResult
 	var scoredBids []ScoredBid
-	if len(queryEmbedding) > 0 && len(queryEmbedding[0]) > 0 {
-		qe := queryEmbedding[0]
+	if len(queryEmbedding) > 0 {
+		qe := queryEmbedding
 		scoredBids = make([]ScoredBid, len(eligibleBids))
 		for i, bid := range eligibleBids {
 			scoredBids[i] = ScoredBid{
 				CoreBid: bid,
-				Score:   ComputeEmbeddingScore(bid.Price, bid.Embedding, bid.Sigma, qe),
+				Score:   ComputeEmbeddingScoreWithBase(bid.Price, bid.Embedding, bid.Sigma, qe, logBase),
 			}
 		}
 		ranking = RankScoredBids(scoredBids, defaultRandSource)

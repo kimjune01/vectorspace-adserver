@@ -2,9 +2,9 @@ package handler
 
 import (
 	"bytes"
-	"cloudx-adserver/enclave"
-	"cloudx-adserver/platform"
-	"cloudx-adserver/tee"
+	"vectorspace/enclave"
+	"vectorspace/platform"
+	"vectorspace/tee"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -113,7 +113,7 @@ func TestTEEAdRequestPrivate(t *testing.T) {
 		},
 	})
 
-	req := httptest.NewRequest("POST", "/ad-request-private", bytes.NewReader(body))
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -140,7 +140,7 @@ func TestTEEAdRequestPrivate(t *testing.T) {
 
 func TestTEEAdRequestPrivateMethodNotAllowed(t *testing.T) {
 	router, _, _ := setupTEETestRouter(t)
-	req := httptest.NewRequest("GET", "/ad-request-private", nil)
+	req := httptest.NewRequest("GET", "/ad-request", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -154,36 +154,11 @@ func TestTEEAdRequestPrivateMissingFields(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"encrypted_embedding": map[string]string{},
 	})
-	req := httptest.NewRequest("POST", "/ad-request-private", bytes.NewReader(body))
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestTEERoutesNotRegisteredWithoutProxy(t *testing.T) {
-	// When TEEProxy is nil, /tee/* routes should 404
-	sidecar := fakeSidecar(3)
-	defer sidecar.Close()
-
-	embedder := platform.NewEmbedder(sidecar.URL)
-	registry := platform.NewPositionRegistry(embedder)
-	budgets := platform.NewBudgetTracker()
-	engine := platform.NewAuctionEngine(registry, budgets, embedder)
-
-	router := NewRouter(RouterConfig{
-		Registry: registry,
-		Budgets:  budgets,
-		Engine:   engine,
-		// TEEProxy: nil — not set
-	})
-
-	req := httptest.NewRequest("GET", "/tee/attestation", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404 without TEE proxy, got %d", w.Code)
 	}
 }

@@ -1,0 +1,18 @@
+---
+interface Props {
+  /** Show privacy/terms links */
+  showLinks?: boolean;
+}
+
+const { showLinks = true } = Astro.props;
+---
+
+<footer class="py-8 px-6 border-t border-gray-800 text-center text-sm text-gray-500">
+  {showLinks && (
+    <div class="flex justify-center gap-6 mb-2">
+      <a href="/privacy" class="hover:text-gray-300 transition">Privacy</a>
+      <a href="/terms" class="hover:text-gray-300 transition">Terms</a>
+    </div>
+  )}
+  vectorspace.exchange
+</footer>

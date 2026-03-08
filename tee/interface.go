@@ -1,6 +1,6 @@
 package tee
 
-import "cloudx-adserver/enclave"
+import "vectorspace/enclave"
 
 // TEEProxyInterface abstracts the TEE proxy for both real Nitro Enclave
 // and mock (in-process) implementations.
