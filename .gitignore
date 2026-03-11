@@ -8,7 +8,7 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
-server
+/server
 infra/vecspace-infra
 infra/vectorspace-infra
 
