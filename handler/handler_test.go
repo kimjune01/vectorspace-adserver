@@ -585,6 +585,9 @@ func TestHealthEndpoint(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("status = %q, want %q", resp["status"], "ok")
 	}
+	if _, ok := resp["gitHash"]; !ok {
+		t.Error("gitHash field missing from health response")
+	}
 }
 
 func TestRegisterMethodNotAllowed(t *testing.T) {

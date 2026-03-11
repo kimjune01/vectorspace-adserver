@@ -38,7 +38,7 @@ func NewHuggingFaceEmbedder(model, token string) *Embedder {
 		model = "BAAI/bge-small-en-v1.5"
 	}
 	return &Embedder{
-		baseURL: "https://api-inference.huggingface.co/pipeline/feature-extraction/" + model,
+		baseURL: "https://router.huggingface.co/hf-inference/models/" + model + "/pipeline/feature-extraction",
 		hfToken: token,
 		httpClient: &http.Client{
 			Transport: &http.Transport{

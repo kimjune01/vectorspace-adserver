@@ -4,7 +4,8 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /vectorspace-server ./cmd/server/
+ARG GIT_HASH=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X main.GitHash=${GIT_HASH}" -o /vectorspace-server ./cmd/server/
 
 # Stage 2: Build portal frontend
 FROM node:22-alpine AS portal-builder

@@ -149,6 +149,9 @@ var healthQueries = []string{
 	"I need to create a will but lawyers are expensive",
 }
 
+// GitHash is set at build time via -ldflags "-X main.GitHash=..."
+var GitHash = "dev"
+
 func main() {
 	sidecarURL := flag.String("sidecar-url", "http://localhost:8081", "URL of the embedding sidecar")
 	dbPath := flag.String("db-path", "", "Path to SQLite database (empty = in-memory only)")
@@ -274,6 +277,7 @@ func main() {
 		FreqCapWindow: *freqCapWindow,
 		AdminPassword: *adminPassword,
 		TEEProxy:      teeProxy,
+		GitHash:       GitHash,
 	})
 
 	if *hfToken != "" {

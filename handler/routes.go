@@ -57,6 +57,7 @@ type RouterConfig struct {
 	FreqCapWindow int
 	AdminPassword string
 	TEEProxy      tee.TEEProxyInterface
+	GitHash       string
 }
 
 // adminAuthMiddleware checks the X-Admin-Password header. If password is empty, all requests pass through (dev mode).
@@ -87,9 +88,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	mux := http.NewServeMux()
 
+	gitHash := cfg.GitHash
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "gitHash": gitHash})
 	})
 
 	mux.HandleFunc("/advertiser/register", advHandler.HandleRegister)

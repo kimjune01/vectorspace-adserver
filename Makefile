@@ -30,7 +30,7 @@ grade-skill: ## Run one trial with grading (REPO=owner/name SKILL=evaluate|insta
 # ── Build ────────────────────────────────────────────────────────
 
 build-server: ## Build Go server binary
-	CGO_ENABLED=0 go build -o bin/vectorspace-server ./cmd/server/
+	CGO_ENABLED=0 go build -ldflags "-X main.GitHash=$$(git rev-parse --short HEAD)" -o bin/vectorspace-server ./cmd/server/
 
 build-portal-staging: ## Build portal for staging
 	cd portal && npx vite build --mode staging
@@ -64,7 +64,7 @@ prod: build ## Build for production
 # ── Docker ───────────────────────────────────────────────────────
 
 docker-build: ## Build Docker image
-	docker build -t vectorspace .
+	docker build --build-arg GIT_HASH=$$(git rev-parse --short HEAD) -t vectorspace .
 
 docker-run-dev: ## Run in Docker (dev)
 	docker run -p 8080:8080 -e ANTHROPIC_API_KEY vectorspace -db-path=/data/vectorspace.db -seed
