@@ -24,6 +24,11 @@ node_modules/
 dist/
 .astro/
 
+# Swift / Xcode
+.build/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
 # Skill files (source of truth: github.com/kimjune01/vectorspace-skills)
 skill/*.md
 skill/test/results/
