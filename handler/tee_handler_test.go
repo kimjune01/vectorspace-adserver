@@ -148,6 +148,24 @@ func TestTEEAdRequestPrivateMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestTEEAdRequestRejectsPlaintextEmbedding(t *testing.T) {
+	router, _, _ := setupTEETestRouter(t)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"embedding": []float64{0.01, 0.02, 0.03},
+	})
+	req := httptest.NewRequest("POST", "/ad-request", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("plaintext embeddings are not accepted")) {
+		t.Errorf("expected rejection message, got: %s", w.Body.String())
+	}
+}
+
 func TestTEEAdRequestPrivateMissingFields(t *testing.T) {
 	router, _, _ := setupTEETestRouter(t)
 

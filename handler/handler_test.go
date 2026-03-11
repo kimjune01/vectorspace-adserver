@@ -416,12 +416,8 @@ func plainEmbeddingAdRequest(t *testing.T, router http.Handler, proxy *tee.MockT
 	return w
 }
 
-func TestAdRequestPlainEmbedding(t *testing.T) {
+func TestAdRequestPlainEmbeddingRejected(t *testing.T) {
 	router, _, proxy := setupTestRouterWithProxy(t)
-
-	// Register 2 advertisers so we get a winner + runner-up
-	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	registerAdvertiser(t, router, "Adv2", "intent two", 0.5, 3.0, 1000.0)
 
 	w := plainEmbeddingAdRequest(t, router, proxy,
 		[]enclave.PositionSnapshot{
@@ -434,37 +430,8 @@ func TestAdRequestPlainEmbedding(t *testing.T) {
 		},
 		"pub-1",
 	)
-	if w.Code != http.StatusOK {
-		t.Fatalf("plain embedding ad-request status = %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-
-	if resp["winner_id"] == nil || resp["winner_id"] == "" {
-		t.Error("expected winner_id in response")
-	}
-	if payment, ok := resp["payment"].(float64); !ok || payment <= 0 {
-		t.Errorf("payment = %v, want > 0", resp["payment"])
-	}
-	if resp["currency"] != "USD" {
-		t.Errorf("currency = %v, want USD", resp["currency"])
-	}
-	if resp["auction_id"] == nil {
-		t.Error("expected auction_id in response")
-	}
-}
-
-func TestAdRequestPlainEmbeddingNoAdvertisers(t *testing.T) {
-	router, _, proxy := setupTestRouterWithProxy(t)
-
-	w := plainEmbeddingAdRequest(t, router, proxy,
-		[]enclave.PositionSnapshot{},
-		[]enclave.BudgetSnapshot{},
-		"",
-	)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 with no advertisers, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for plain embedding, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -47,11 +47,15 @@ func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	hasPlainEmbedding := len(req.Embedding) > 0
-	hasEncryptedEmbedding := req.EncryptedEmbedding.AESKeyEncrypted != "" && req.EncryptedEmbedding.EncryptedPayload != ""
+	// Reject plaintext embeddings — the exchange must never see the query.
+	// Publishers that send unencrypted embeddings get a clear error.
+	if len(req.Embedding) > 0 {
+		http.Error(w, "plaintext embeddings are not accepted; encrypt with the enclave's attested public key", http.StatusBadRequest)
+		return
+	}
 
-	if !hasPlainEmbedding && !hasEncryptedEmbedding {
-		http.Error(w, "either embedding or encrypted_embedding is required", http.StatusBadRequest)
+	if req.EncryptedEmbedding.AESKeyEncrypted == "" || req.EncryptedEmbedding.EncryptedPayload == "" {
+		http.Error(w, "encrypted_embedding is required", http.StatusBadRequest)
 		return
 	}
 
