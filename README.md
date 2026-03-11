@@ -109,5 +109,4 @@ cd sdk-ios && swift test       # iOS SDK tests
 
 ## Privacy
 
-- **Phase 1 (live):** SDK runs the auction locally. Exchange only learns `{winner_id, payment}` via `POST /ad-claim`.
-- **Phase 2 (planned):** Embedding encrypted with TEE's attested public key. Auction runs inside [enclave](https://github.com/kimjune01/vectorspace-enclave). Embedding destroyed after execution.
+SDK extracts intent and embeds it locally — no chat text leaves the device. The embedding is encrypted with the [enclave](https://github.com/kimjune01/vectorspace-enclave)'s attested public key and sent to the server as ciphertext. The server passes it to the TEE, which decrypts, runs the auction with live budgets, returns `{winner_id, payment}`, and zeros the embedding. The exchange never sees the query.
