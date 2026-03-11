@@ -1,85 +1,55 @@
 package auction
 
-// validateBidPrices filters bids with invalid (non-positive) prices.
-func validateBidPrices(bids []CoreBid) (valid []CoreBid, rejectedBidIDs []string) {
-	validBids := make([]CoreBid, 0, len(bids))
-	rejectedIDs := make([]string, 0)
+import "math"
 
+// RunAuction executes a single sealed-bid auction in embedding space.
+// One-shot: advertisers declare center, sigma, bid. No iterative rounds.
+// Winner is argmax of score_i(x) = log_B(b_i) - ||x - c_i||² / σ_i²
+// Payment determined by VCG (see ComputeVCGPayment).
+// See: june.kim/one-shot-bidding, june.kim/power-diagrams-ad-auctions
+func RunAuction(bids []CoreBid, bidFloor float64, queryEmbedding ...[]float64) *AuctionResult {
+	result := &AuctionResult{}
+
+	// Reject non-positive bids
+	var valid []CoreBid
 	for _, bid := range bids {
-		if bid.Price > 0.0 {
-			validBids = append(validBids, bid)
+		if bid.Price <= 0 {
+			result.PriceRejectedBidIDs = append(result.PriceRejectedBidIDs, bid.ID)
 		} else {
-			rejectedIDs = append(rejectedIDs, bid.ID)
+			valid = append(valid, bid)
 		}
 	}
 
-	return validBids, rejectedIDs
-}
+	// Enforce bid floor (publisher's τ for price)
+	eligible, floorRejected := EnforceBidFloor(valid, bidFloor)
+	result.FloorRejectedBidIDs = floorRejected
+	result.EligibleBids = eligible
 
-// RunAuction executes the core auction logic:
-// price validation → floor enforcement → ranking.
-func RunAuction(
-	bids []CoreBid,
-	bidFloor float64,
-	queryEmbedding ...[]float64,
-) *AuctionResult {
+	if len(eligible) == 0 {
+		return result
+	}
+
+	// Determine query point
 	var qe []float64
 	if len(queryEmbedding) > 0 {
 		qe = queryEmbedding[0]
 	}
 
-	// Step 1: Validate bid prices
-	validBids, priceRejectedBids := validateBidPrices(bids)
+	// Score and rank all eligible bids
+	ranked := RankByScore(eligible, qe)
+	result.ScoredBids = ranked
 
-	// Step 2: Enforce floor price
-	eligibleBids, floorRejectedBids := EnforceBidFloor(validBids, bidFloor)
-
-	// Step 3: Rank eligible bids
-	var ranking *CoreRankingResult
-	var scoredBids []ScoredBid
-	if len(qe) > 0 {
-		scoredBids = make([]ScoredBid, len(eligibleBids))
-		for i, bid := range eligibleBids {
-			scoredBids[i] = ScoredBid{
-				CoreBid: bid,
-				Score:   ComputeEmbeddingScore(bid.Price, bid.Embedding, bid.Sigma, qe),
-			}
-		}
-		ranking = RankScoredBids(scoredBids, defaultRandSource)
-	} else {
-		ranking = RankCoreBids(eligibleBids, defaultRandSource)
+	// Winner: highest score (must be finite)
+	if len(ranked) > 0 && !math.IsInf(ranked[0].Score, -1) {
+		winner := ranked[0].CoreBid
+		result.Winner = &winner
 	}
 
-	// Build sorted scored bids list in rank order
-	var sortedScoredBids []ScoredBid
-	if len(scoredBids) > 0 {
-		scoredByID := make(map[string]ScoredBid, len(scoredBids))
-		for _, sb := range scoredBids {
-			scoredByID[sb.ID] = sb
-		}
-		for _, bidderID := range ranking.SortedBidders {
-			bid := ranking.HighestBids[bidderID]
-			if sb, ok := scoredByID[bid.ID]; ok {
-				sortedScoredBids = append(sortedScoredBids, sb)
-			}
-		}
+	// Runner-up: second highest score
+	if len(ranked) > 1 && !math.IsInf(ranked[1].Score, -1) {
+		runnerUp := ranked[1].CoreBid
+		result.RunnerUp = &runnerUp
 	}
 
-	// Step 4: Extract winner and runner-up
-	var winner, runnerUp *CoreBid
-	if len(ranking.SortedBidders) > 0 {
-		winner = ranking.HighestBids[ranking.SortedBidders[0]]
-	}
-	if len(ranking.SortedBidders) > 1 {
-		runnerUp = ranking.HighestBids[ranking.SortedBidders[1]]
-	}
-
-	return &AuctionResult{
-		Winner:              winner,
-		RunnerUp:            runnerUp,
-		EligibleBids:        eligibleBids,
-		ScoredBids:          sortedScoredBids,
-		PriceRejectedBidIDs: priceRejectedBids,
-		FloorRejectedBidIDs: floorRejectedBids,
-	}
+	return result
 }
