@@ -68,7 +68,7 @@ vs.observeViewability(
       <h1 class="text-5xl font-bold tracking-tight leading-tight mb-6">
         How <span class="gradient-text">vectorspace</span> works
       </h1>
-      <p class="text-xl text-gray-400 max-w-2xl mx-auto">
+      <p class="text-xl text-gray-400 leading-relaxed max-w-2xl mx-auto">
         A deep dive into the architecture: semantic matching, fair auctions, and privacy you can verify.
       </p>
     </div>
@@ -85,8 +85,8 @@ vs.observeViewability(
           <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">1</div>
           <div>
             <h3 class="text-xl font-semibold mb-3">SDK embeds the intent locally</h3>
-            <p class="text-gray-400 mb-4">
-              Your app calls <code class="text-brand-400 bg-gray-800 px-1.5 py-0.5 rounded">requestAd({'{ intent }'})</code>. The SDK converts the natural-language intent into a 384-dimensional vector on the client side. The raw text never leaves the user's device.
+            <p class="text-gray-400 leading-relaxed mb-4">
+              Your app calls <code class="text-brand-400 bg-gray-800 px-1.5 py-0.5 rounded text-[0.9em]">requestAd({'{ intent }'})</code>. The SDK converts the natural-language intent into a 384-dimensional vector on the client side. The raw text never leaves the user's device.
             </p>
           </div>
         </div>
@@ -96,8 +96,8 @@ vs.observeViewability(
           <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">2</div>
           <div>
             <h3 class="text-xl font-semibold mb-3">Encrypt with the enclave's attested key</h3>
-            <p class="text-gray-400 mb-4">
-              The SDK fetches the enclave's attested public key (RSA-OAEP, SHA-256) and encrypts the embedding using hybrid RSA + AES-256-GCM. The encrypted payload is sent to the exchange. Not even the exchange operator can see the query &mdash; only the enclave can decrypt it.
+            <p class="text-gray-400 leading-relaxed mb-4">
+              The SDK fetches the enclave's attested public key (RSA-OAEP, SHA-256) and encrypts the embedding using hybrid RSA + AES-256-GCM. The encrypted payload is sent to the exchange. Not even the exchange operator can see the query&mdash;only the enclave can decrypt it.
             </p>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
               <div class="text-gray-500 mb-1">POST /ad-request</div>
@@ -111,14 +111,14 @@ vs.observeViewability(
           <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">3</div>
           <div>
             <h3 class="text-xl font-semibold mb-3">VCG auction inside the enclave</h3>
-            <p class="text-gray-400 mb-4">
+            <p class="text-gray-400 leading-relaxed mb-4">
               Inside the AWS Nitro Enclave, the embedding is decrypted and eligible ads are scored by combining bid price and embedding relevance:
             </p>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm mb-4">
               <span class="text-gray-300">score = log&#8325;(price) &minus; (distance&sup2; / &sigma;&sup2;)</span>
             </div>
-            <p class="text-gray-400 mb-4">
-              The highest-scoring ad wins. The payment is calculated using the Vickrey-Clarke-Groves mechanism: the winner pays only the amount needed to beat the runner-up, adjusted for relevance distance. This means truthful bidding is the dominant strategy &mdash; there's no incentive to game bids. After the auction completes, the enclave zeros the embedding from memory and returns only the winner ID and payment.
+            <p class="text-gray-400 leading-relaxed mb-4">
+              The highest-scoring ad wins. The payment is calculated using the Vickrey-Clarke-Groves mechanism: the winner pays only the amount needed to beat the runner-up, adjusted for relevance distance. This means truthful bidding is the dominant strategy&mdash;there's no incentive to game bids. After the auction completes, the enclave zeros the embedding from memory and returns only the winner ID and payment.
             </p>
           </div>
         </div>
@@ -128,7 +128,7 @@ vs.observeViewability(
           <div class="flex-shrink-0 w-12 h-12 bg-brand-600/20 text-brand-400 rounded-xl flex items-center justify-center text-xl font-bold">4</div>
           <div>
             <h3 class="text-xl font-semibold mb-3">Client receives winner + payment</h3>
-            <p class="text-gray-400 mb-4">
+            <p class="text-gray-400 leading-relaxed mb-4">
               Your app gets back the winning advertiser ID and the VCG payment amount. The SDK handles impression reporting, click tracking, and IAB viewability measurement automatically.
             </p>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 font-mono text-sm overflow-x-auto">
@@ -144,19 +144,19 @@ vs.observeViewability(
   <section class="py-16 px-6 bg-gray-900/50 border-t border-gray-800">
     <div class="max-w-4xl mx-auto">
       <h2 class="text-3xl font-bold mb-4">Privacy architecture</h2>
-      <p class="text-gray-400 mb-12">Every auction runs inside an AWS Nitro Enclave. The exchange operator never sees your query.</p>
+      <p class="text-lg text-gray-400 leading-relaxed mb-12">Every auction runs inside an AWS Nitro Enclave. The exchange operator never sees your query.</p>
 
       <div class="space-y-8">
         <!-- TEE-only architecture -->
         <div class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
           <div class="flex items-center gap-3 mb-3">
             <div class="w-8 h-8 bg-brand-500/20 text-brand-400 rounded-lg flex items-center justify-center text-sm font-bold">T</div>
-            <h3 class="text-lg font-semibold">TEE enclave &mdash; the only auction path</h3>
+            <h3 class="text-lg font-semibold">TEE enclave&mdash;the only auction path</h3>
           </div>
-          <p class="text-gray-400 mb-3">
+          <p class="text-gray-400 leading-relaxed mb-3">
             The SDK embeds the intent locally, then encrypts the embedding using the enclave's attested public key (RSA-OAEP + AES-256-GCM). The encrypted payload is sent to an AWS Nitro Enclave that decrypts, runs the VCG auction, zeros the embedding from memory, and returns only the winner ID and payment. Not even we can see the query.
           </p>
-          <p class="text-gray-400 mb-3">
+          <p class="text-gray-400 leading-relaxed mb-3">
             The enclave code is self-contained and stdlib-only, designed for independent audit by publishers, researchers, and regulators.
           </p>
           <div class="text-sm text-gray-500">
@@ -172,7 +172,7 @@ vs.observeViewability(
   <section class="py-16 px-6 border-t border-gray-800">
     <div class="max-w-4xl mx-auto">
       <h2 class="text-3xl font-bold mb-4">SDK integration</h2>
-      <p class="text-gray-400 mb-12">Native SDKs for TypeScript, Python, and Kotlin. One method call to request an ad, with built-in event tracking and viewability measurement.</p>
+      <p class="text-lg text-gray-400 leading-relaxed mb-12">Native SDKs for TypeScript, Python, and Kotlin. One method call to request an ad, with built-in event tracking and viewability measurement.</p>
 
       <div class="grid md:grid-cols-3 gap-6">
         <!-- TypeScript -->
@@ -203,7 +203,7 @@ vs.observeViewability(
       <div class="mt-8 grid md:grid-cols-2 gap-6">
         <div class="bg-gray-800/30 border border-gray-700/30 rounded-lg p-5">
           <h4 class="font-semibold mb-2">Built-in event tracking</h4>
-          <p class="text-gray-400 text-sm">Impression, click, and viewability events are reported through the SDK. Viewability follows the IAB standard: 50% of pixels visible for 1 continuous second.</p>
+          <p class="text-gray-400 leading-relaxed">Impression, click, and viewability events are reported through the SDK. Viewability follows the IAB standard: 50% of pixels visible for 1&nbsp;continuous second.</p>
         </div>
       </div>
     </div>
@@ -218,28 +218,28 @@ vs.observeViewability(
           <span class="text-red-400 text-xl mt-0.5">&times;</span>
           <div>
             <h4 class="font-semibold mb-1">No user profiles</h4>
-            <p class="text-gray-400 text-sm">We don't build profiles of users across sessions or apps. Each ad request is independent.</p>
+            <p class="text-gray-400 leading-relaxed">We don't build profiles of users across sessions or apps. Each ad request is independent.</p>
           </div>
         </div>
         <div class="flex items-start gap-4">
           <span class="text-red-400 text-xl mt-0.5">&times;</span>
           <div>
             <h4 class="font-semibold mb-1">No cookies or fingerprinting</h4>
-            <p class="text-gray-400 text-sm">No tracking cookies, no browser fingerprints, no device IDs. Matching is based on the current intent only.</p>
+            <p class="text-gray-400 leading-relaxed">No tracking cookies, no browser fingerprints, no device IDs. Matching is based on the current intent only.</p>
           </div>
         </div>
         <div class="flex items-start gap-4">
           <span class="text-red-400 text-xl mt-0.5">&times;</span>
           <div>
             <h4 class="font-semibold mb-1">No cross-site tracking</h4>
-            <p class="text-gray-400 text-sm">We don't follow users across publishers or apps. An ad request from one app has no connection to another.</p>
+            <p class="text-gray-400 leading-relaxed">We don't follow users across publishers or apps. An ad request from one app has no connection to another.</p>
           </div>
         </div>
         <div class="flex items-start gap-4">
           <span class="text-red-400 text-xl mt-0.5">&times;</span>
           <div>
             <h4 class="font-semibold mb-1">No data selling</h4>
-            <p class="text-gray-400 text-sm">Intent data is never sold to third parties. Auction logs are retained only for billing and fraud prevention.</p>
+            <p class="text-gray-400 leading-relaxed">Intent data is never sold to third parties. Auction logs are retained only for billing and fraud prevention.</p>
           </div>
         </div>
       </div>
@@ -250,7 +250,7 @@ vs.observeViewability(
   <section class="py-20 px-6 border-t border-gray-800">
     <div class="max-w-3xl mx-auto text-center">
       <h2 class="text-3xl font-bold mb-4">Ready to integrate?</h2>
-      <p class="text-gray-400 mb-8">Tell us about your app or product and we'll get you set up with API keys.</p>
+      <p class="text-lg text-gray-400 leading-relaxed mb-8">Tell us about your app or product and we'll get you set up with API keys.</p>
       <a href="/get-started" class="inline-block bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-lg text-lg font-medium transition">
         Get Started
       </a>
