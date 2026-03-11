@@ -14,7 +14,6 @@ type AuctionRequest struct {
 	Embedding          []float64          `json:"embedding,omitempty"`
 	Tau                float64            `json:"tau,omitempty"`
 	PublisherID        string             `json:"publisher_id,omitempty"`
-	LogBase            float64            `json:"log_base,omitempty"`
 }
 
 // AuctionResponse is returned from the enclave to the parent.

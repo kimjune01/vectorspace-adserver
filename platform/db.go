@@ -91,7 +91,6 @@ func (db *DB) createTables() error {
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		domain TEXT NOT NULL DEFAULT '',
-		log_base REAL NOT NULL DEFAULT 5.0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -154,11 +153,6 @@ func (db *DB) createTables() error {
 		return fmt.Errorf("migrate advertiser url: %w", err)
 	}
 
-	// Idempotent migration: add log_base to publishers
-	if err := db.migratePublisherLogBase(); err != nil {
-		return fmt.Errorf("migrate publisher log_base: %w", err)
-	}
-
 	return nil
 }
 
@@ -219,37 +213,6 @@ func (db *DB) migrateAdvertiserURL() error {
 
 	if !hasColumn {
 		_, err := db.conn.Exec("ALTER TABLE advertisers ADD COLUMN url TEXT NOT NULL DEFAULT ''")
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (db *DB) migratePublisherLogBase() error {
-	var hasColumn bool
-	rows, err := db.conn.Query("PRAGMA table_info(publishers)")
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			rows.Close()
-			return err
-		}
-		if name == "log_base" {
-			hasColumn = true
-		}
-	}
-	rows.Close()
-
-	if !hasColumn {
-		_, err := db.conn.Exec("ALTER TABLE publishers ADD COLUMN log_base REAL NOT NULL DEFAULT 5.0")
 		if err != nil {
 			return err
 		}
@@ -1020,17 +983,16 @@ func (db *DB) LogEventWithPublisher(auctionID int64, advertiserID, eventType, us
 
 // Publisher represents a publisher in the system.
 type Publisher struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Domain    string  `json:"domain"`
-	LogBase   float64 `json:"log_base"`
-	CreatedAt string  `json:"created_at"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Domain    string `json:"domain"`
+	CreatedAt string `json:"created_at"`
 }
 
 // GetAllPublishers returns all publishers ordered by ID.
 func (db *DB) GetAllPublishers() ([]Publisher, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, name, domain, log_base, created_at FROM publishers ORDER BY id`,
+		`SELECT id, name, domain, created_at FROM publishers ORDER BY id`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get all publishers: %w", err)
@@ -1040,7 +1002,7 @@ func (db *DB) GetAllPublishers() ([]Publisher, error) {
 	var publishers []Publisher
 	for rows.Next() {
 		var p Publisher
-		if err := rows.Scan(&p.ID, &p.Name, &p.Domain, &p.LogBase, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Domain, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan publisher: %w", err)
 		}
 		publishers = append(publishers, p)
@@ -1064,8 +1026,8 @@ func (db *DB) InsertPublisher(id, name, domain string) error {
 func (db *DB) GetPublisher(id string) (*Publisher, error) {
 	var p Publisher
 	err := db.conn.QueryRow(
-		`SELECT id, name, domain, log_base, created_at FROM publishers WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Domain, &p.LogBase, &p.CreatedAt)
+		`SELECT id, name, domain, created_at FROM publishers WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Domain, &p.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1073,30 +1035,6 @@ func (db *DB) GetPublisher(id string) (*Publisher, error) {
 		return nil, fmt.Errorf("get publisher: %w", err)
 	}
 	return &p, nil
-}
-
-// GetPublisherLogBase returns the publisher's log base setting.
-// Returns DefaultLogBase (5.0) if publisher not found.
-func (db *DB) GetPublisherLogBase(publisherID string) float64 {
-	var logBase float64
-	err := db.conn.QueryRow(
-		`SELECT log_base FROM publishers WHERE id = ?`, publisherID,
-	).Scan(&logBase)
-	if err != nil || logBase <= 0 {
-		return 5.0
-	}
-	return logBase
-}
-
-// SetPublisherLogBase updates the publisher's log base setting.
-func (db *DB) SetPublisherLogBase(publisherID string, logBase float64) error {
-	_, err := db.conn.Exec(
-		`UPDATE publishers SET log_base = ? WHERE id = ?`, logBase, publisherID,
-	)
-	if err != nil {
-		return fmt.Errorf("set publisher log_base: %w", err)
-	}
-	return nil
 }
 
 // NextPublisherID returns the next publisher ID based on current max.

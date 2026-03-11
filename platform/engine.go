@@ -114,7 +114,7 @@ func (e *AuctionEngine) SimulateAuction(intent string, tau float64) (*Simulation
 			Sigma:      sb.Sigma,
 			Score:      sb.Score,
 			DistanceSq: distSq,
-			LogBid:     math.Log(sb.Price) / math.Log(auction.DefaultLogBase),
+			LogBid:     math.Log(sb.Price) / math.Log(auction.LogBase),
 		})
 	}
 

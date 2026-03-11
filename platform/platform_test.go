@@ -618,36 +618,6 @@ func TestGetTenureDays(t *testing.T) {
 	}
 }
 
-func TestPublisherLogBase(t *testing.T) {
-	db := newMemoryDB(t)
-
-	// Nonexistent publisher → default 5.0
-	logBase := db.GetPublisherLogBase("pub-999")
-	if logBase != 5.0 {
-		t.Errorf("expected default 5.0, got %f", logBase)
-	}
-
-	// Insert a publisher
-	if err := db.InsertPublisher("pub-1", "Test Publisher", "test.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Default after insert → 5.0
-	logBase = db.GetPublisherLogBase("pub-1")
-	if logBase != 5.0 {
-		t.Errorf("expected default 5.0, got %f", logBase)
-	}
-
-	// Set custom log base
-	if err := db.SetPublisherLogBase("pub-1", 10.0); err != nil {
-		t.Fatal(err)
-	}
-	logBase = db.GetPublisherLogBase("pub-1")
-	if logBase != 10.0 {
-		t.Errorf("expected 10.0, got %f", logBase)
-	}
-}
-
 func TestEmbeddingsVersion(t *testing.T) {
 	sidecar := fakeSidecar(3)
 	defer sidecar.Close()

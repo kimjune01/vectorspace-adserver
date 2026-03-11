@@ -55,11 +55,6 @@ func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Look up publisher's log base if not set in request
-	if req.LogBase <= 0 && req.PublisherID != "" && h.DB != nil {
-		req.LogBase = h.DB.GetPublisherLogBase(req.PublisherID)
-	}
-
 	resp, err := h.Proxy.RunAuction(&req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

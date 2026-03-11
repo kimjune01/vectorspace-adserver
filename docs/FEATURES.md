@@ -70,11 +70,11 @@ Blog refs: *How to Trust Advertisers*, *Stay or Pay*
 
 Blog refs: *Stay or Pay*, *The Last Signal*
 
-### Gap 6: ~~Log Base Not Configurable~~ → Addressed
+### Gap 6: ~~Log Base Not Configurable~~ → Deprecated
 
-Log base is now configurable per-publisher via the `log_base` column in the `publishers` table (default 5.0). The `auction/` package exposes `RunAuctionWithBase`, `ComputeEmbeddingScoreWithBase`, and `ComputeVCGPaymentWithBase` for parameterized scoring. The TEE handler looks up the publisher's log base and passes it to the enclave. Publishers can set their log base via `SetPublisherLogBase` in `platform/db.go`.
+Per-publisher log base was implemented and then removed. *Three Levers* shows that log base compression is dead weight: advertisers adjust σ to compensate, so the equilibrium converges to the same allocation regardless of the base. The log base is now a fixed constant (`LogBase = 5.0` in `auction/embedding.go`).
 
-Blog refs: *The Price of Relevance*, *Three Levers*
+Blog refs: *Three Levers*
 
 ### Gap 7: No Health Vertical Seed Data
 

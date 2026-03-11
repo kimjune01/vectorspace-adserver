@@ -796,37 +796,6 @@ func TestEmbeddingsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestPublisherLogBase(t *testing.T) {
-	_, db := setupTestRouter(t)
-
-	// Create publisher
-	if err := db.InsertPublisher("pub-1", "Test Publisher", "test.com"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Default log base should be 5.0
-	logBase := db.GetPublisherLogBase("pub-1")
-	if logBase != 5.0 {
-		t.Errorf("expected default log_base 5.0, got %f", logBase)
-	}
-
-	// Set custom log base
-	if err := db.SetPublisherLogBase("pub-1", 20.0); err != nil {
-		t.Fatal(err)
-	}
-
-	logBase = db.GetPublisherLogBase("pub-1")
-	if logBase != 20.0 {
-		t.Errorf("expected log_base 20.0, got %f", logBase)
-	}
-
-	// Non-existent publisher should return default
-	logBase = db.GetPublisherLogBase("pub-nonexistent")
-	if logBase != 5.0 {
-		t.Errorf("expected default 5.0 for nonexistent publisher, got %f", logBase)
-	}
-}
-
 func TestCreativeCreateAndList(t *testing.T) {
 	router, db := setupTestRouter(t)
 	result := registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 100.0)
