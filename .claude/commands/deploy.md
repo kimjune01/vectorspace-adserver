@@ -62,13 +62,28 @@ docker push ghcr.io/kimjune01/vectorspace-sidecar:$(git rev-parse --short HEAD)
 docker push ghcr.io/kimjune01/vectorspace-sidecar:latest
 ```
 
-6. Get server IP and SSH to pull + restart:
+6. Get server IP and SSH via EC2 Instance Connect to pull + restart:
 ```bash
 cd infra && set -a && . ./.env && set +a && pulumi stack output serverIp --stack dev && cd ..
 ```
+
+Generate a temporary SSH key and push it via EC2 Instance Connect:
 ```bash
-ssh ubuntu@<SERVER_IP> "cd /opt/vectorspace && sudo docker compose pull && sudo docker compose up -d"
+INSTANCE_ID=$(cd infra && pulumi stack output instanceId --stack dev && cd ..)
+ssh-keygen -t ed25519 -f /tmp/ec2-connect-key -N "" -q -y 2>/dev/null || ssh-keygen -t ed25519 -f /tmp/ec2-connect-key -N "" -q
+aws ec2-instance-connect send-ssh-public-key --instance-id $INSTANCE_ID --instance-os-user ubuntu --ssh-public-key file:///tmp/ec2-connect-key.pub
 ```
+
+Then SSH within 60 seconds (the pushed key expires):
+```bash
+ssh -i /tmp/ec2-connect-key -o StrictHostKeyChecking=no ubuntu@<SERVER_IP> "cd /opt/vectorspace && sudo docker compose pull && sudo docker compose up -d"
+```
+
+If the server needs GHCR auth to pull private images:
+```bash
+ssh -i /tmp/ec2-connect-key -o StrictHostKeyChecking=no ubuntu@<SERVER_IP> "echo <GHCR_TOKEN> | sudo docker login ghcr.io -u kimjune01 --password-stdin && cd /opt/vectorspace && sudo docker compose pull && sudo docker compose up -d"
+```
+Get a GHCR token locally with `gh auth token`.
 
 7. If landing/ or infra/ changed, run Pulumi deploy:
 ```bash
@@ -95,13 +110,21 @@ git tag <NEW_TAG> && git push origin <NEW_TAG>
 
 ## First-Time Setup
 
-### GHCR Authentication
+### GHCR Authentication (local machine)
 ```bash
-echo $GITHUB_TOKEN | docker login ghcr.io -u kimjune01 --password-stdin
+gh auth token | docker login ghcr.io -u kimjune01 --password-stdin
 ```
+Requires `write:packages` scope. If missing: `gh auth refresh -s write:packages`.
+
+### GHCR Authentication (EC2 server)
+The server also needs GHCR auth to pull private images. SSH in and run:
+```bash
+echo <TOKEN> | sudo docker login ghcr.io -u kimjune01 --password-stdin
+```
+This persists across pulls until the token expires.
 
 ### EC2 SSH Access
-Set `KEY_NAME` in `infra/.env` to your EC2 key pair name. Ensure the key pair exists in your AWS region.
+Uses EC2 Instance Connect — no key pair needed. The deploy steps above handle key generation and pushing automatically. Requires `aws ec2-instance-connect send-ssh-public-key` permission in your IAM policy.
 
 ### Environment Variables
 Copy and fill in `infra/.env` from `infra/.env.example`.
@@ -116,8 +139,11 @@ Copy and fill in `infra/.env` from `infra/.env.example`.
 
 | Error | Fix |
 |-------|-----|
-| Docker push 403 | Re-authenticate: `echo $GITHUB_TOKEN \| docker login ghcr.io -u kimjune01 --password-stdin` |
-| SSH connection refused | Check KEY_NAME is set in infra/.env and security group allows port 22 |
-| Health check fails after deploy | SSH in and check logs: `sudo docker compose -f /opt/vectorspace/docker-compose.yml logs server` |
+| Docker push 403 | Re-authenticate: `gh auth token \| docker login ghcr.io -u kimjune01 --password-stdin`. May need `gh auth refresh -s write:packages` |
+| SSH connection refused | Security group must allow port 22. Uses EC2 Instance Connect (no key pair needed) |
+| Docker pull unauthorized on server | Server needs GHCR login: SSH in and run `echo $(gh auth token) \| sudo docker login ghcr.io -u kimjune01 --password-stdin` |
+| Health check fails after deploy | SSH in and check logs: `sudo docker compose -f /opt/vectorspace/docker-compose.yml logs server`. Note: server takes ~20s to seed demo data on first boot |
+| EBS volume not at /dev/xvdf | On NVMe instances (t3, c5, etc.) it appears as `/dev/nvme1n1`. Check `lsblk` |
+| Docker not installed on new instance | UserData uses Docker's official apt repo. If it failed, SSH in and install manually: see infra/main.go UserData |
 | Pulumi conflict | Run `cd infra && pulumi cancel` then retry |
 | Portal shows stale content | Hard refresh (Cmd+Shift+R) — Vite uses content hashing for cache busting |
