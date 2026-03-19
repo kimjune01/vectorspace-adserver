@@ -4,6 +4,7 @@ import (
 	"vectorspace/handler"
 	"vectorspace/platform"
 	"vectorspace/tee"
+	"vectorspace/trust"
 	"flag"
 	"log"
 	"math/rand"
@@ -166,6 +167,8 @@ func main() {
 	teePort := flag.Int("tee-port", 5000, "Enclave vsock port")
 	hfToken := flag.String("hf-token", "", "Hugging Face API token (uses HF Inference API instead of sidecar)")
 	hfModel := flag.String("hf-model", "BAAI/bge-small-en-v1.5", "Hugging Face embedding model")
+	smtpAddr := flag.String("smtp-addr", ":2525", "SMTP listen address for trust exchange")
+	exchangeDomain := flag.String("exchange-domain", "exchange.localhost", "Mail domain for the trust exchange")
 	flag.Parse()
 
 	// Try env var for API key if flag not set
@@ -217,6 +220,17 @@ func main() {
 
 	engine := platform.NewAuctionEngine(registry, budgets, embedder)
 	engine.DB = db
+
+	// Trust exchange ledger — uses the same SQLite connection
+	var trustLedger *trust.Ledger
+	if db != nil {
+		var err error
+		trustLedger, err = trust.NewLedger(db.Conn())
+		if err != nil {
+			log.Fatalf("Failed to initialize trust ledger: %v", err)
+		}
+		log.Println("Trust exchange ledger initialized")
+	}
 
 	// Seed default advertisers if requested and DB is empty
 	if *seed && db != nil {
@@ -278,7 +292,19 @@ func main() {
 		AdminPassword: *adminPassword,
 		TEEProxy:      teeProxy,
 		GitHash:       GitHash,
+		TrustLedger:   trustLedger,
 	})
+
+	// Start trust exchange SMTP server
+	if trustLedger != nil {
+		exchangeServer := trust.NewExchangeServer(trustLedger, *exchangeDomain, *smtpAddr)
+		go func() {
+			if err := exchangeServer.ListenAndServe(); err != nil {
+				log.Printf("Trust exchange SMTP server error: %v", err)
+			}
+		}()
+		defer exchangeServer.Close()
+	}
 
 	if *hfToken != "" {
 		log.Printf("CloudX Ad Server starting on :8080 (embeddings: Hugging Face)")

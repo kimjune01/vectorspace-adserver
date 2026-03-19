@@ -119,9 +119,10 @@ func main() {
 		}
 
 		sg, err := ec2.NewSecurityGroup(ctx, "server-sg", &ec2.SecurityGroupArgs{
-			Description: pulumi.String("vectorspace server - HTTP, HTTPS, SSH"),
+			Description: pulumi.String("vectorspace server - HTTP, HTTPS, SSH, SMTP"),
 			Ingress: ec2.SecurityGroupIngressArray{
 				&ec2.SecurityGroupIngressArgs{Protocol: pulumi.String("tcp"), FromPort: pulumi.Int(22), ToPort: pulumi.Int(22), CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")}},
+				&ec2.SecurityGroupIngressArgs{Protocol: pulumi.String("tcp"), FromPort: pulumi.Int(25), ToPort: pulumi.Int(25), CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")}},
 				&ec2.SecurityGroupIngressArgs{Protocol: pulumi.String("tcp"), FromPort: pulumi.Int(80), ToPort: pulumi.Int(80), CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")}},
 				&ec2.SecurityGroupIngressArgs{Protocol: pulumi.String("tcp"), FromPort: pulumi.Int(443), ToPort: pulumi.Int(443), CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")}},
 			},
@@ -357,6 +358,29 @@ func main() {
 			return err
 		}
 
+		// Trust exchange: A record + MX record for attestation email delivery
+		_, err = route53.NewRecord(ctx, "exchange-record", &route53.RecordArgs{
+			ZoneId:  zone.ZoneId,
+			Name:    pulumi.Sprintf("exchange.%s", domain),
+			Type:    pulumi.String("A"),
+			Ttl:     pulumi.Int(300),
+			Records: pulumi.StringArray{eip.PublicIp},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = route53.NewRecord(ctx, "exchange-mx", &route53.RecordArgs{
+			ZoneId:  zone.ZoneId,
+			Name:    pulumi.Sprintf("exchange.%s", domain),
+			Type:    pulumi.String("MX"),
+			Ttl:     pulumi.Int(300),
+			Records: pulumi.StringArray{pulumi.Sprintf("10 exchange.%s", domain)},
+		})
+		if err != nil {
+			return err
+		}
+
 		// -----------------------------------------------------------
 		// Outputs
 		// -----------------------------------------------------------
@@ -366,6 +390,8 @@ func main() {
 		ctx.Export("apiUrl", pulumi.Sprintf("https://api.%s", domain))
 		ctx.Export("portalUrl", pulumi.Sprintf("https://portal.%s", domain))
 		ctx.Export("landingUrl", pulumi.Sprintf("https://%s", domain))
+		ctx.Export("exchangeDomain", pulumi.Sprintf("exchange.%s", domain))
+		ctx.Export("exchangeSmtp", pulumi.Sprintf("exchange.%s:25", domain))
 
 		return nil
 	})
@@ -431,6 +457,8 @@ services:
       - "-admin-password=__ADMIN_PASSWORD__"
       - "-anthropic-key=__ANTHROPIC_API_KEY__"
       - "-hf-token=__HF_TOKEN__"
+      - "-smtp-addr=:25"
+      - "-exchange-domain=exchange.__DOMAIN__"
 
 volumes:
   caddy_data:

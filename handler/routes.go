@@ -3,6 +3,7 @@ package handler
 import (
 	"vectorspace/platform"
 	"vectorspace/tee"
+	"vectorspace/trust"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -58,6 +59,7 @@ type RouterConfig struct {
 	AdminPassword string
 	TEEProxy      tee.TEEProxyInterface
 	GitHash       string
+	TrustLedger   *trust.Ledger
 }
 
 // adminAuthMiddleware checks the X-Admin-Password header. If password is empty, all requests pass through (dev mode).
@@ -185,6 +187,18 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
+	}
+
+	// Trust graph / attestation exchange endpoints
+	if cfg.TrustLedger != nil {
+		trustHandler := &TrustHandler{Ledger: cfg.TrustLedger}
+		mux.HandleFunc("/trust/graph", trustHandler.HandleGraph)
+		mux.HandleFunc("/trust/node/", trustHandler.HandleNode)
+		mux.HandleFunc("/trust/attestation/", trustHandler.HandleAttestation)
+		mux.HandleFunc("/trust/log", trustHandler.HandleLedgerLog)
+		mux.HandleFunc("/trust/attest", trustHandler.HandleSubmitAttestation)
+		mux.HandleFunc("/trust/allowlist", trustHandler.HandleTrustedDomains)
+		mux.HandleFunc("/trust/publish", trustHandler.HandlePublishPreference)
 	}
 
 	// TEE endpoints — all auctions run through the enclave

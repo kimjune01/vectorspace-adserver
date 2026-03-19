@@ -220,6 +220,11 @@ func (db *DB) migrateAdvertiserURL() error {
 	return nil
 }
 
+// Conn returns the underlying sql.DB connection for sharing with other packages.
+func (db *DB) Conn() *sql.DB {
+	return db.conn
+}
+
 // Close closes the database connection.
 func (db *DB) Close() error {
 	return db.conn.Close()
