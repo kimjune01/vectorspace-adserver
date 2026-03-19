@@ -192,13 +192,15 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Trust graph / attestation exchange endpoints
 	if cfg.TrustLedger != nil {
 		trustHandler := &TrustHandler{Ledger: cfg.TrustLedger}
+		// Public read endpoints (curators sync these)
 		mux.HandleFunc("/trust/graph", trustHandler.HandleGraph)
 		mux.HandleFunc("/trust/node/", trustHandler.HandleNode)
 		mux.HandleFunc("/trust/attestation/", trustHandler.HandleAttestation)
 		mux.HandleFunc("/trust/log", trustHandler.HandleLedgerLog)
-		mux.HandleFunc("/trust/attest", trustHandler.HandleSubmitAttestation)
 		mux.HandleFunc("/trust/allowlist", trustHandler.HandleTrustedDomains)
-		mux.HandleFunc("/trust/publish", trustHandler.HandlePublishPreference)
+		// Write endpoints (admin-only — production attestations arrive via DKIM-signed email)
+		mux.HandleFunc("/trust/attest", adminAuthMiddleware(cfg.AdminPassword, trustHandler.HandleSubmitAttestation))
+		mux.HandleFunc("/trust/publish", adminAuthMiddleware(cfg.AdminPassword, trustHandler.HandlePublishPreference))
 	}
 
 	// TEE endpoints — all auctions run through the enclave

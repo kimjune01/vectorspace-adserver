@@ -17,9 +17,10 @@ import (
 // ExchangeServer is the SMTP server that receives attestation emails.
 // It verifies DKIM signatures and indexes attestations into the ledger.
 type ExchangeServer struct {
-	server *smtp.Server
-	ledger *Ledger
-	domain string // e.g., "exchange.com"
+	server       *smtp.Server
+	ledger       *Ledger
+	domain       string // e.g., "exchange.com"
+	RequireDKIM  bool   // if true, reject messages that fail DKIM verification
 }
 
 // NewExchangeServer creates an SMTP server listening for attestation emails.
@@ -75,9 +76,12 @@ func (es *ExchangeServer) processMessage(from string, to string, rawMessage []by
 	}
 
 	if !dkimValid {
-		// Fall back to sender domain from MAIL FROM
+		if es.RequireDKIM {
+			return fmt.Errorf("DKIM verification failed for %s — message rejected", from)
+		}
+		// Dev mode: fall back to MAIL FROM (fakeable — never use in production)
 		verifiedDomain = domainFromEmail(from)
-		log.Printf("trust: DKIM verification failed for %s (proceeding with unverified domain)", from)
+		log.Printf("trust: WARNING DKIM verification failed for %s (dev mode fallback, fakeable)", from)
 	}
 
 	// Step 2: Parse the email to extract JSON body

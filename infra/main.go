@@ -459,6 +459,7 @@ services:
       - "-hf-token=__HF_TOKEN__"
       - "-smtp-addr=:25"
       - "-exchange-domain=exchange.__DOMAIN__"
+      - "-require-dkim"
 
 volumes:
   caddy_data:

@@ -253,7 +253,10 @@ The exchange runs as part of the VectorSpace ad server:
 ```
 --smtp-addr=:25               SMTP listen address
 --exchange-domain=exchange.x   Mail domain for the trust exchange
+--require-dkim                 Reject emails that fail DKIM verification (production)
 ```
+
+Without `--require-dkim`, the exchange falls back to the SMTP envelope sender, which is trivially fakeable. **Always enable in production.**
 
 ### DNS Records (managed by Pulumi)
 

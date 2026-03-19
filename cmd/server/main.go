@@ -169,6 +169,7 @@ func main() {
 	hfModel := flag.String("hf-model", "BAAI/bge-small-en-v1.5", "Hugging Face embedding model")
 	smtpAddr := flag.String("smtp-addr", ":2525", "SMTP listen address for trust exchange")
 	exchangeDomain := flag.String("exchange-domain", "exchange.localhost", "Mail domain for the trust exchange")
+	requireDKIM := flag.Bool("require-dkim", false, "Reject attestation emails that fail DKIM verification (enable in production)")
 	flag.Parse()
 
 	// Try env var for API key if flag not set
@@ -298,6 +299,7 @@ func main() {
 	// Start trust exchange SMTP server
 	if trustLedger != nil {
 		exchangeServer := trust.NewExchangeServer(trustLedger, *exchangeDomain, *smtpAddr)
+		exchangeServer.RequireDKIM = *requireDKIM
 		go func() {
 			if err := exchangeServer.ListenAndServe(); err != nil {
 				log.Printf("Trust exchange SMTP server error: %v", err)
