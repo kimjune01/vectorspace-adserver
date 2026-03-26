@@ -35,26 +35,26 @@ func (h *TrustHandler) HandleGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleNode serves GET /trust/node/{domain} — trust info for a single domain.
+// HandleNode serves GET /trust/node/{addr} — trust info for a single address.
 func (h *TrustHandler) HandleNode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	domain := strings.TrimPrefix(r.URL.Path, "/trust/node/")
-	if domain == "" {
-		http.Error(w, "domain required", http.StatusBadRequest)
+	addr := strings.TrimPrefix(r.URL.Path, "/trust/node/")
+	if addr == "" {
+		http.Error(w, "addr required", http.StatusBadRequest)
 		return
 	}
 
-	node, err := h.Ledger.GetNode(domain)
+	node, err := h.Ledger.GetNode(addr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	edges, err := h.Ledger.GetEdgesForDomain(domain)
+	edges, err := h.Ledger.GetEdgesForAddr(addr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,10 +138,10 @@ func (h *TrustHandler) HandleSubmitAttestation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// For HTTP submissions, the sender domain comes from the payload
-	senderDomain, _ := payload["sender_domain"].(string)
-	if senderDomain == "" {
-		http.Error(w, "sender_domain is required", http.StatusBadRequest)
+	// For HTTP submissions, the sender email comes from the payload
+	senderEmail, _ := payload["sender_email"].(string)
+	if senderEmail == "" {
+		http.Error(w, "sender_email is required", http.StatusBadRequest)
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *TrustHandler) HandleSubmitAttestation(w http.ResponseWriter, r *http.Re
 			http.Error(w, "attestation_id required", http.StatusBadRequest)
 			return
 		}
-		if err := h.Ledger.ConfirmAttestation(attestationID, senderDomain); err != nil {
+		if err := h.Ledger.ConfirmAttestation(attestationID, senderEmail); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -168,7 +168,7 @@ func (h *TrustHandler) HandleSubmitAttestation(w http.ResponseWriter, r *http.Re
 			return
 		}
 		reason, _ := payload["reason"].(string)
-		if err := h.Ledger.RevokeAttestation(attestationID, senderDomain, reason); err != nil {
+		if err := h.Ledger.RevokeAttestation(attestationID, senderEmail, reason); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -196,7 +196,7 @@ func (h *TrustHandler) HandleSubmitAttestation(w http.ResponseWriter, r *http.Re
 		a := &trust.Attestation{
 			ID:              attestationID,
 			Type:            attestationType,
-			AttestorDomain:  senderDomain,
+			AttestorEmail:   senderEmail,
 			SubjectEmail:    subject,
 			Status:          status,
 			EdgeKind:        edgeKind,
@@ -221,9 +221,9 @@ func (h *TrustHandler) HandleSubmitAttestation(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// HandleTrustedDomains serves GET /trust/allowlist — domains meeting trust thresholds.
+// HandleTrustedAddrs serves GET /trust/allowlist — addresses meeting trust thresholds.
 // Query params: ?min_edges=N&min_bilateral=N
-func (h *TrustHandler) HandleTrustedDomains(w http.ResponseWriter, r *http.Request) {
+func (h *TrustHandler) HandleTrustedAddrs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -242,7 +242,7 @@ func (h *TrustHandler) HandleTrustedDomains(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	nodes, err := h.Ledger.GetTrustedDomains(minEdges, minBilateral)
+	nodes, err := h.Ledger.GetTrustedAddrs(minEdges, minBilateral)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -250,7 +250,7 @@ func (h *TrustHandler) HandleTrustedDomains(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"domains": nodes,
+		"addrs": nodes,
 		"count":   len(nodes),
 		"criteria": map[string]int{
 			"min_edges":     minEdges,

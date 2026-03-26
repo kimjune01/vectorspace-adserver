@@ -197,7 +197,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		mux.HandleFunc("/trust/node/", trustHandler.HandleNode)
 		mux.HandleFunc("/trust/attestation/", trustHandler.HandleAttestation)
 		mux.HandleFunc("/trust/log", trustHandler.HandleLedgerLog)
-		mux.HandleFunc("/trust/allowlist", trustHandler.HandleTrustedDomains)
+		mux.HandleFunc("/trust/allowlist", trustHandler.HandleTrustedAddrs)
 		// Write endpoints (admin-only — production attestations arrive via DKIM-signed email)
 		mux.HandleFunc("/trust/attest", adminAuthMiddleware(cfg.AdminPassword, trustHandler.HandleSubmitAttestation))
 		mux.HandleFunc("/trust/publish", adminAuthMiddleware(cfg.AdminPassword, trustHandler.HandlePublishPreference))

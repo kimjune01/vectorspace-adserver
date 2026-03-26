@@ -34,7 +34,7 @@ const (
 type Attestation struct {
 	ID              string            `json:"attestation_id"`
 	Type            string            `json:"attestation_type"`
-	AttestorDomain  string            `json:"attestor_domain"`  // DKIM-verified sending domain
+	AttestorEmail   string            `json:"attestor_email"`   // DKIM-verified sender email
 	SubjectEmail    string            `json:"subject"`          // who the attestation is about
 	Status          AttestationStatus `json:"status"`
 	EdgeKind        EdgeKind          `json:"edge_kind"`
@@ -49,13 +49,13 @@ type Attestation struct {
 // Confirmation is sent by the subject to confirm a bilateral attestation.
 type Confirmation struct {
 	AttestationID string `json:"attestation_id"`
-	SenderDomain  string `json:"sender_domain"` // DKIM-verified
+	SenderEmail  string `json:"sender_email"` // DKIM-verified
 }
 
 // Revocation removes an edge. Either party can send it.
 type Revocation struct {
 	AttestationID string `json:"attestation_id"`
-	SenderDomain  string `json:"sender_domain"` // DKIM-verified
+	SenderEmail   string `json:"sender_email"` // DKIM-verified
 	Reason        string `json:"reason"`
 }
 
@@ -65,8 +65,8 @@ type Revocation struct {
 type TrustEdge struct {
 	ID             int64    `json:"id"`
 	AttestationID  string   `json:"attestation_id"`
-	FromDomain     string   `json:"from_domain"`
-	ToDomain       string   `json:"to_domain"`
+	FromAddr       string   `json:"from_addr"`
+	ToAddr         string   `json:"to_addr"`
 	Kind           EdgeKind `json:"kind"`
 	AttestationType string  `json:"attestation_type"`
 	Weight         float64  `json:"weight"` // signal strength (duration, volume, etc.)
@@ -75,7 +75,7 @@ type TrustEdge struct {
 
 // TrustNode is a node in the trust graph with aggregated edge info.
 type TrustNode struct {
-	Domain         string  `json:"domain"`
+	Addr           string  `json:"addr"`
 	EdgeCount      int     `json:"edge_count"`
 	BilateralCount int     `json:"bilateral_count"`
 	UnilateralCount int    `json:"unilateral_count"`

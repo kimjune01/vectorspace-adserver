@@ -109,7 +109,7 @@ func TestSMTPAttestationFlow(t *testing.T) {
 		t.Errorf("expected confirmed after bilateral confirmation, got %s", a.Status)
 	}
 
-	edges, err := ledger.GetEdgesForDomain("stripe.com")
+	edges, err := ledger.GetEdgesForAddr("attestations@stripe.com")
 	if err != nil {
 		t.Fatalf("get edges: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestSMTPAttestationFlow(t *testing.T) {
 		t.Errorf("expected revoked, got %s", a.Status)
 	}
 
-	edges, _ = ledger.GetEdgesForDomain("stripe.com")
+	edges, _ = ledger.GetEdgesForAddr("attestations@stripe.com")
 	if len(edges) != 0 {
 		t.Errorf("expected 0 edges after revocation, got %d", len(edges))
 	}
@@ -250,7 +250,7 @@ func TestSMTPUnilateralPlatformRating(t *testing.T) {
 	}
 
 	// Edge should exist immediately
-	edges, _ := ledger.GetEdgesForDomain("google.com")
+	edges, _ := ledger.GetEdgesForAddr("attestations@google.com")
 	if len(edges) != 1 {
 		t.Fatalf("expected 1 edge, got %d", len(edges))
 	}

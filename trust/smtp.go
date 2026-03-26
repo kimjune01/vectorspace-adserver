@@ -66,11 +66,11 @@ func (es *ExchangeServer) processMessage(from string, to string, rawMessage []by
 	}
 
 	dkimValid := false
-	var verifiedDomain string
+	var verifiedSender string
 	for _, v := range verifications {
 		if v.Err == nil {
 			dkimValid = true
-			verifiedDomain = v.Domain
+			verifiedSender = from // use full email, DKIM domain just confirms it's legit
 			break
 		}
 	}
@@ -80,7 +80,7 @@ func (es *ExchangeServer) processMessage(from string, to string, rawMessage []by
 			return fmt.Errorf("DKIM verification failed for %s — message rejected", from)
 		}
 		// Dev mode: fall back to MAIL FROM (fakeable — never use in production)
-		verifiedDomain = domainFromEmail(from)
+		verifiedSender = from
 		log.Printf("trust: WARNING DKIM verification failed for %s (dev mode fallback, fakeable)", from)
 	}
 
@@ -106,15 +106,15 @@ func (es *ExchangeServer) processMessage(from string, to string, rawMessage []by
 
 	switch action {
 	case "confirm":
-		return es.handleConfirm(payload, verifiedDomain, dkimValid, rawMessage)
+		return es.handleConfirm(payload, verifiedSender, dkimValid, rawMessage)
 	case "revoke":
-		return es.handleRevoke(payload, verifiedDomain, dkimValid, rawMessage)
+		return es.handleRevoke(payload, verifiedSender, dkimValid, rawMessage)
 	default:
-		return es.handleAttestation(payload, verifiedDomain, dkimValid, rawMessage)
+		return es.handleAttestation(payload, verifiedSender, dkimValid, rawMessage)
 	}
 }
 
-func (es *ExchangeServer) handleAttestation(payload map[string]any, senderDomain string, dkimValid bool, raw []byte) error {
+func (es *ExchangeServer) handleAttestation(payload map[string]any, senderEmail string, dkimValid bool, raw []byte) error {
 	attestationID, _ := payload["attestation_id"].(string)
 	if attestationID == "" {
 		return fmt.Errorf("missing attestation_id")
@@ -141,7 +141,7 @@ func (es *ExchangeServer) handleAttestation(payload map[string]any, senderDomain
 	a := &Attestation{
 		ID:             attestationID,
 		Type:           attestationType,
-		AttestorDomain: senderDomain,
+		AttestorEmail: senderEmail,
 		SubjectEmail:   subject,
 		Status:         status,
 		EdgeKind:       edgeKind,
@@ -156,25 +156,25 @@ func (es *ExchangeServer) handleAttestation(payload map[string]any, senderDomain
 	}
 
 	log.Printf("trust: recorded %s attestation %s from %s about %s (dkim=%v, kind=%s)",
-		attestationType, attestationID, senderDomain, subject, dkimValid, edgeKind)
+		attestationType, attestationID, senderEmail, subject, dkimValid, edgeKind)
 	return nil
 }
 
-func (es *ExchangeServer) handleConfirm(payload map[string]any, senderDomain string, dkimValid bool, raw []byte) error {
+func (es *ExchangeServer) handleConfirm(payload map[string]any, senderEmail string, dkimValid bool, raw []byte) error {
 	attestationID, _ := payload["attestation_id"].(string)
 	if attestationID == "" {
 		return fmt.Errorf("confirm: missing attestation_id")
 	}
 
-	if err := es.ledger.ConfirmAttestation(attestationID, senderDomain); err != nil {
+	if err := es.ledger.ConfirmAttestation(attestationID, senderEmail); err != nil {
 		return fmt.Errorf("confirm attestation: %w", err)
 	}
 
-	log.Printf("trust: confirmed attestation %s by %s (dkim=%v)", attestationID, senderDomain, dkimValid)
+	log.Printf("trust: confirmed attestation %s by %s (dkim=%v)", attestationID, senderEmail, dkimValid)
 	return nil
 }
 
-func (es *ExchangeServer) handleRevoke(payload map[string]any, senderDomain string, dkimValid bool, raw []byte) error {
+func (es *ExchangeServer) handleRevoke(payload map[string]any, senderEmail string, dkimValid bool, raw []byte) error {
 	attestationID, _ := payload["attestation_id"].(string)
 	if attestationID == "" {
 		return fmt.Errorf("revoke: missing attestation_id")
@@ -182,11 +182,11 @@ func (es *ExchangeServer) handleRevoke(payload map[string]any, senderDomain stri
 
 	reason, _ := payload["reason"].(string)
 
-	if err := es.ledger.RevokeAttestation(attestationID, senderDomain, reason); err != nil {
+	if err := es.ledger.RevokeAttestation(attestationID, senderEmail, reason); err != nil {
 		return fmt.Errorf("revoke attestation: %w", err)
 	}
 
-	log.Printf("trust: revoked attestation %s by %s reason=%s (dkim=%v)", attestationID, senderDomain, reason, dkimValid)
+	log.Printf("trust: revoked attestation %s by %s reason=%s (dkim=%v)", attestationID, senderEmail, reason, dkimValid)
 	return nil
 }
 

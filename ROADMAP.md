@@ -62,8 +62,22 @@ Map the ad server to the six roles: Perceive → Cache → Filter → Attend →
 - **Curators don't learn.** Allowlist thresholds (`min_edges=3, min_bilateral=1`) are set by hand. A curator that tracks which allowlisted advertisers later get flagged for fraud could tighten or loosen thresholds automatically. The curator's cron job.
 - **Publishers don't learn.** A publisher's trust policy is static YAML. A publisher whose health-trust-network curator lets through a bad advertiser has no feedback mechanism to downweight that curator. Consolidate would adjust curator weights based on outcomes.
 
+### Parts bin prescriptions
+
+Each gap mapped to the [embedding pipe](https://june.kim/embedding-pipe) and [parts bin](https://june.kim/the-parts-bin). The broken contract names the problem. The algorithm names the fix.
+
+- **Sigma adaptation.** Sigma is frozen at registration. Problem: a pet food brand that wins "senior dog treats" but loses "puppy toys" has the signal to narrow its spread, but nothing reads the signal. Prescription: Consolidate × embedding_space from the [parts bin](https://june.kim/the-parts-bin). Read win/loss history from Remember, fit an online Bayesian posterior update over sigma per advertiser. Algorithm: Bayesian posterior update (parts bin Consolidate catalog). The loss function is auction outcome regret.
+
+- **Embedding drift.** Advertiser embeddings are set once from registration intent. Problem: a brand that evolves its positioning still occupies its original point. Prescription: Consolidate re-embeds from actual auction wins, not claimed intent. Algorithm: online k-means or Growing Neural Gas from the [Consolidate catalog](https://june.kim/the-parts-bin#catalog). Cluster winning queries per advertiser, update the embedding centroid toward the cluster mean.
+
+- **Trust edge decay.** A 3-year payment relationship weighs 3.0 forever. Problem: stale trust edges never expire, fraud signals never propagate. Prescription: Consolidate reads from Remember (trust_edges, ledger_log) and writes updated weights. Algorithm: exponential decay with a fraud-signal correction term. This is the same backward pass the [handshake](https://june.kim/the-handshake) describes: persisted → policy′. The trust graph is the policy store. Consolidate reshapes it.
+
+- **Curator threshold tuning.** Allowlist thresholds (`min_edges=3, min_bilateral=1`) are hand-set. Problem: a curator can't tell whether its threshold is too loose (lets bad advertisers through) or too tight (blocks good ones). Prescription: Consolidate tracks which allowlisted advertisers later get flagged, adjusts thresholds. Algorithm: online gradient descent on a threshold-vs-fraud-rate objective from the [Consolidate catalog](https://june.kim/the-parts-bin#catalog).
+
+- **Publisher policy learning.** Publisher trust policies are static YAML. Problem: a publisher whose curator lets through a bad advertiser has no feedback mechanism. Prescription: Consolidate adjusts curator weights per publisher based on impression outcomes. This is the [embedding pipe](https://june.kim/embedding-pipe) Consolidate step: update the retrieval policy from outcomes.
+
 ### The arc
 
 Perceive through Remember is the forward pass — the system serves ads. Consolidate is the backward pass — the system learns to serve better ads. Right now, every parameter (σ, embeddings, trust weights, curator thresholds, publisher policies) is set by humans and stays fixed. The system has the job but no crontab.
 
-Filter (trust policy) is the immediate priority — it gates what enters the auction. Consolidate is next — it's what makes the gates adaptive.
+Filter (trust policy) is the immediate priority — it gates what enters the auction. Consolidate is next — it's what makes the gates adaptive. The [parts bin](https://june.kim/the-parts-bin) names the algorithms. The [embedding pipe](https://june.kim/embedding-pipe) maps the stages.

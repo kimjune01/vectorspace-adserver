@@ -132,10 +132,10 @@ Weights are derived from the attestation payload:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/trust/graph` | GET | Full trust graph (all edges). Curators sync this. |
-| `/trust/node/{domain}` | GET | Node info + edges for a single domain. |
+| `/trust/node/{addr}` | GET | Node info + edges for a single address. |
 | `/trust/attestation/{id}` | GET | Single attestation by ID. |
 | `/trust/log?limit=N` | GET | Append-only ledger log (default 100 entries). |
-| `/trust/allowlist?min_edges=N&min_bilateral=N` | GET | Domains meeting trust thresholds. |
+| `/trust/allowlist?min_edges=N&min_bilateral=N` | GET | Addresses meeting trust thresholds. |
 | `/trust/publish` | PUT | Set field-level publish preferences. |
 
 ### HTTP Attestation Submission (Dev)
@@ -147,7 +147,7 @@ POST /trust/attest
 
 # New attestation
 {
-  "sender_domain": "stripe.com",
+  "sender_email": "attestations@stripe.com",
   "attestation_id": "stripe_merchant123_2026",
   "attestation_type": "payment_processor",
   "subject": "merchant@example.com",
@@ -156,14 +156,14 @@ POST /trust/attest
 
 # Confirm
 {
-  "sender_domain": "example.com",
+  "sender_email": "merchant@example.com",
   "action": "confirm",
   "attestation_id": "stripe_merchant123_2026"
 }
 
 # Revoke
 {
-  "sender_domain": "stripe.com",
+  "sender_email": "attestations@stripe.com",
   "action": "revoke",
   "attestation_id": "stripe_merchant123_2026",
   "reason": "account_closed"
@@ -178,13 +178,13 @@ POST /trust/attest
 GET /trust/allowlist?min_edges=3&min_bilateral=1
 ```
 
-Returns domains that meet the specified thresholds:
+Returns addresses that meet the specified thresholds:
 
 ```json
 {
-  "domains": [
+  "addrs": [
     {
-      "domain": "example.com",
+      "addr": "merchant@example.com",
       "edge_count": 8,
       "bilateral_count": 6,
       "unilateral_count": 2,
@@ -203,15 +203,15 @@ Returns domains that meet the specified thresholds:
 ### Node Detail
 
 ```
-GET /trust/node/example.com
+GET /trust/node/merchant@example.com
 ```
 
-Returns aggregated trust info and all edges involving the domain:
+Returns aggregated trust info and all edges involving the address:
 
 ```json
 {
   "node": {
-    "domain": "example.com",
+    "addr": "merchant@example.com",
     "edge_count": 8,
     "bilateral_count": 6,
     "unilateral_count": 2
@@ -219,8 +219,8 @@ Returns aggregated trust info and all edges involving the domain:
   "edges": [
     {
       "attestation_id": "stripe_merchant123_2026",
-      "from_domain": "stripe.com",
-      "to_domain": "example.com",
+      "from_addr": "attestations@stripe.com",
+      "to_addr": "merchant@example.com",
       "kind": "bilateral",
       "attestation_type": "payment_processor",
       "weight": 3.0
@@ -270,7 +270,7 @@ exchange.vectorspace.exchange.  MX    10 exchange.vectorspace.exchange.
 | Concern | Mitigation |
 |---------|------------|
 | Forged attestations | DKIM signature verification. Faking requires compromising the attestor's mail server. |
-| Unauthorized confirmation | Confirmer domain must match the subject's email domain. |
+| Unauthorized confirmation | Confirmer email must match the subject's email address. |
 | Unauthorized revocation | Only the attestor or subject can revoke. Third parties are rejected. |
 | Spam/DDoS | Standard SMTP rate limiting. 1 MB message size limit. Single recipient only. |
 | Privacy | Extensible schemas with opt-in field publishing. Edges are public; field values are optional. |
@@ -282,7 +282,7 @@ exchange.vectorspace.exchange.  MX    10 exchange.vectorspace.exchange.
 CREATE TABLE attestations (
     id TEXT PRIMARY KEY,
     attestation_type TEXT NOT NULL,
-    attestor_domain TEXT NOT NULL,
+    attestor_email TEXT NOT NULL,
     subject_email TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending | confirmed | revoked
     edge_kind TEXT NOT NULL DEFAULT 'bilateral',  -- bilateral | unilateral
@@ -298,8 +298,8 @@ CREATE TABLE attestations (
 CREATE TABLE trust_edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     attestation_id TEXT NOT NULL REFERENCES attestations(id),
-    from_domain TEXT NOT NULL,
-    to_domain TEXT NOT NULL,
+    from_addr TEXT NOT NULL,
+    to_addr TEXT NOT NULL,
     kind TEXT NOT NULL,  -- bilateral | unilateral
     attestation_type TEXT NOT NULL,
     weight REAL NOT NULL DEFAULT 1.0,
@@ -311,7 +311,7 @@ CREATE TABLE ledger_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     action TEXT NOT NULL,  -- attestation | confirm | revoke
     attestation_id TEXT NOT NULL,
-    sender_domain TEXT NOT NULL,
+    sender_email TEXT NOT NULL,
     raw_payload TEXT NOT NULL,
     dkim_verified INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL

@@ -33,7 +33,7 @@ func TestHTTPAttestationFlow(t *testing.T) {
 
 	// Submit attestation via HTTP
 	body := map[string]any{
-		"sender_domain":    "stripe.com",
+		"sender_email":     "attestations@stripe.com",
 		"attestation_id":   "http_stripe_test",
 		"attestation_type": "payment_processor",
 		"subject":          "merchant@example.com",
@@ -61,7 +61,7 @@ func TestHTTPAttestationFlow(t *testing.T) {
 
 	// Confirm via HTTP
 	confirmBody := map[string]any{
-		"sender_domain":  "example.com",
+		"sender_email":   "merchant@example.com",
 		"action":         "confirm",
 		"attestation_id": "http_stripe_test",
 	}
@@ -87,7 +87,7 @@ func TestHTTPAttestationFlow(t *testing.T) {
 	}
 
 	// Check node info
-	req = httptest.NewRequest("GET", "/trust/node/example.com", nil)
+	req = httptest.NewRequest("GET", "/trust/node/merchant@example.com", nil)
 	w = httptest.NewRecorder()
 	h.HandleNode(w, req)
 
@@ -103,7 +103,7 @@ func TestHTTPUnilateralAttestation(t *testing.T) {
 	h, _ := setupTrustHandler(t)
 
 	body := map[string]any{
-		"sender_domain":    "google.com",
+		"sender_email":     "reviews@google.com",
 		"attestation_id":   "google_rating_1",
 		"attestation_type": "platform_rating",
 		"subject":          "restaurant@example.com",
@@ -146,7 +146,7 @@ func TestHTTPRevocation(t *testing.T) {
 
 	// Create and confirm
 	body := map[string]any{
-		"sender_domain":    "stripe.com",
+		"sender_email":     "attestations@stripe.com",
 		"attestation_id":   "revoke_test",
 		"attestation_type": "payment_processor",
 		"subject":          "merchant@example.com",
@@ -157,7 +157,7 @@ func TestHTTPRevocation(t *testing.T) {
 	h.HandleSubmitAttestation(w, req)
 
 	confirmBody := map[string]any{
-		"sender_domain":  "example.com",
+		"sender_email":   "merchant@example.com",
 		"action":         "confirm",
 		"attestation_id": "revoke_test",
 	}
@@ -168,7 +168,7 @@ func TestHTTPRevocation(t *testing.T) {
 
 	// Revoke
 	revokeBody := map[string]any{
-		"sender_domain":  "stripe.com",
+		"sender_email":   "attestations@stripe.com",
 		"action":         "revoke",
 		"attestation_id": "revoke_test",
 		"reason":         "account_closed",
@@ -197,11 +197,11 @@ func TestHTTPRevocation(t *testing.T) {
 func TestHTTPAllowlist(t *testing.T) {
 	h, _ := setupTrustHandler(t)
 
-	// Build up a rich topology for example.com
+	// Build up a rich topology for merchant@example.com
 	attestations := []map[string]any{
-		{"sender_domain": "stripe.com", "attestation_id": "a1", "attestation_type": "payment_processor", "subject": "merchant@example.com"},
-		{"sender_domain": "supplier.com", "attestation_id": "a2", "attestation_type": "vendor_relationship", "subject": "merchant@example.com"},
-		{"sender_domain": "google.com", "attestation_id": "a3", "attestation_type": "platform_rating", "subject": "merchant@example.com", "review_count": float64(100)},
+		{"sender_email": "attestations@stripe.com", "attestation_id": "a1", "attestation_type": "payment_processor", "subject": "merchant@example.com"},
+		{"sender_email": "sales@supplier.com", "attestation_id": "a2", "attestation_type": "vendor_relationship", "subject": "merchant@example.com"},
+		{"sender_email": "reviews@google.com", "attestation_id": "a3", "attestation_type": "platform_rating", "subject": "merchant@example.com", "review_count": float64(100)},
 	}
 	for _, att := range attestations {
 		b, _ := json.Marshal(att)
@@ -213,7 +213,7 @@ func TestHTTPAllowlist(t *testing.T) {
 	// Confirm bilateral ones
 	for _, id := range []string{"a1", "a2"} {
 		b, _ := json.Marshal(map[string]any{
-			"sender_domain":  "example.com",
+			"sender_email":   "merchant@example.com",
 			"action":         "confirm",
 			"attestation_id": id,
 		})
@@ -225,13 +225,13 @@ func TestHTTPAllowlist(t *testing.T) {
 	// Query allowlist: min 3 edges, min 1 bilateral
 	req := httptest.NewRequest("GET", "/trust/allowlist?min_edges=3&min_bilateral=1", nil)
 	w := httptest.NewRecorder()
-	h.HandleTrustedDomains(w, req)
+	h.HandleTrustedAddrs(w, req)
 
 	var resp map[string]any
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	count := resp["count"].(float64)
 	if count == 0 {
-		t.Error("expected at least one domain in allowlist")
+		t.Error("expected at least one addr in allowlist")
 	}
 }
 
@@ -240,7 +240,7 @@ func TestHTTPLedgerLog(t *testing.T) {
 
 	// Create an attestation
 	body := map[string]any{
-		"sender_domain":    "stripe.com",
+		"sender_email":     "attestations@stripe.com",
 		"attestation_id":   "log_test",
 		"attestation_type": "payment_processor",
 		"subject":          "m@example.com",
@@ -266,7 +266,7 @@ func TestHTTPGetAttestation(t *testing.T) {
 	h, _ := setupTrustHandler(t)
 
 	body := map[string]any{
-		"sender_domain":    "stripe.com",
+		"sender_email":     "attestations@stripe.com",
 		"attestation_id":   "get_test",
 		"attestation_type": "payment_processor",
 		"subject":          "m@example.com",

@@ -27,7 +27,7 @@ func (l *Ledger) createTables() error {
 	CREATE TABLE IF NOT EXISTS attestations (
 		id TEXT PRIMARY KEY,
 		attestation_type TEXT NOT NULL,
-		attestor_domain TEXT NOT NULL,
+		attestor_email TEXT NOT NULL,
 		subject_email TEXT NOT NULL,
 		status TEXT NOT NULL DEFAULT 'pending',
 		edge_kind TEXT NOT NULL DEFAULT 'bilateral',
@@ -40,22 +40,22 @@ func (l *Ledger) createTables() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_attestations_subject ON attestations(subject_email);
-	CREATE INDEX IF NOT EXISTS idx_attestations_attestor ON attestations(attestor_domain);
+	CREATE INDEX IF NOT EXISTS idx_attestations_attestor ON attestations(attestor_email);
 	CREATE INDEX IF NOT EXISTS idx_attestations_status ON attestations(status);
 
 	CREATE TABLE IF NOT EXISTS trust_edges (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		attestation_id TEXT NOT NULL REFERENCES attestations(id),
-		from_domain TEXT NOT NULL,
-		to_domain TEXT NOT NULL,
+		from_addr TEXT NOT NULL,
+		to_addr TEXT NOT NULL,
 		kind TEXT NOT NULL,
 		attestation_type TEXT NOT NULL,
 		weight REAL NOT NULL DEFAULT 1.0,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_edges_from ON trust_edges(from_domain);
-	CREATE INDEX IF NOT EXISTS idx_edges_to ON trust_edges(to_domain);
+	CREATE INDEX IF NOT EXISTS idx_edges_from ON trust_edges(from_addr);
+	CREATE INDEX IF NOT EXISTS idx_edges_to ON trust_edges(to_addr);
 	CREATE INDEX IF NOT EXISTS idx_edges_attestation ON trust_edges(attestation_id);
 
 	CREATE TABLE IF NOT EXISTS publish_preferences (
@@ -69,7 +69,7 @@ func (l *Ledger) createTables() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		action TEXT NOT NULL,
 		attestation_id TEXT NOT NULL,
-		sender_domain TEXT NOT NULL,
+		sender_email TEXT NOT NULL,
 		raw_payload TEXT NOT NULL,
 		dkim_verified INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -107,9 +107,9 @@ func (l *Ledger) RecordAttestation(a *Attestation) error {
 	defer tx.Rollback()
 
 	_, err = tx.Exec(
-		`INSERT INTO attestations (id, attestation_type, attestor_domain, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at)
+		`INSERT INTO attestations (id, attestation_type, attestor_email, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Type, a.AttestorDomain, a.SubjectEmail, a.Status, a.EdgeKind, dkimInt,
+		a.ID, a.Type, a.AttestorEmail, a.SubjectEmail, a.Status, a.EdgeKind, dkimInt,
 		string(payloadJSON), string(publishedJSON), a.ReceivedAt,
 	)
 	if err != nil {
@@ -118,8 +118,8 @@ func (l *Ledger) RecordAttestation(a *Attestation) error {
 
 	// Log to append-only ledger
 	_, err = tx.Exec(
-		`INSERT INTO ledger_log (action, attestation_id, sender_domain, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
-		"attestation", a.ID, a.AttestorDomain, string(payloadJSON), dkimInt,
+		`INSERT INTO ledger_log (action, attestation_id, sender_email, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
+		"attestation", a.ID, a.AttestorEmail, string(payloadJSON), dkimInt,
 	)
 	if err != nil {
 		return fmt.Errorf("log attestation: %w", err)
@@ -129,8 +129,8 @@ func (l *Ledger) RecordAttestation(a *Attestation) error {
 	if a.EdgeKind == EdgeUnilateral && a.Status == StatusConfirmed {
 		weight := computeWeight(a.Payload)
 		_, err = tx.Exec(
-			`INSERT INTO trust_edges (attestation_id, from_domain, to_domain, kind, attestation_type, weight) VALUES (?, ?, ?, ?, ?, ?)`,
-			a.ID, a.AttestorDomain, domainFromEmail(a.SubjectEmail), EdgeUnilateral, a.Type, weight,
+			`INSERT INTO trust_edges (attestation_id, from_addr, to_addr, kind, attestation_type, weight) VALUES (?, ?, ?, ?, ?, ?)`,
+			a.ID, a.AttestorEmail, a.SubjectEmail, EdgeUnilateral, a.Type, weight,
 		)
 		if err != nil {
 			return fmt.Errorf("insert unilateral edge: %w", err)
@@ -141,7 +141,7 @@ func (l *Ledger) RecordAttestation(a *Attestation) error {
 }
 
 // ConfirmAttestation records bilateral confirmation and creates mutual edges.
-func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error {
+func (l *Ledger) ConfirmAttestation(attestationID, confirmerEmail string) error {
 	tx, err := l.conn.Begin()
 	if err != nil {
 		return err
@@ -154,9 +154,9 @@ func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error
 	var dkimInt int
 	var confirmedAt, revokedAt sql.NullTime
 	err = tx.QueryRow(
-		`SELECT id, attestation_type, attestor_domain, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
+		`SELECT id, attestation_type, attestor_email, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
 		 FROM attestations WHERE id = ?`, attestationID,
-	).Scan(&a.ID, &a.Type, &a.AttestorDomain, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
+	).Scan(&a.ID, &a.Type, &a.AttestorEmail, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
 		&payloadJSON, &publishedJSON, &a.ReceivedAt, &confirmedAt, &revokedAt)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("attestation %s not found", attestationID)
@@ -170,10 +170,9 @@ func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error
 		return fmt.Errorf("attestation %s is %s, not pending", attestationID, a.Status)
 	}
 
-	// Verify the confirmer is the subject (or their domain matches)
-	subjectDomain := domainFromEmail(a.SubjectEmail)
-	if confirmerDomain != subjectDomain {
-		return fmt.Errorf("confirmer domain %s does not match subject domain %s", confirmerDomain, subjectDomain)
+	// Verify the confirmer is the subject
+	if confirmerEmail != a.SubjectEmail {
+		return fmt.Errorf("confirmer %s does not match subject %s", confirmerEmail, a.SubjectEmail)
 	}
 
 	now := time.Now()
@@ -187,8 +186,8 @@ func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error
 
 	// Log confirmation
 	_, err = tx.Exec(
-		`INSERT INTO ledger_log (action, attestation_id, sender_domain, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
-		"confirm", attestationID, confirmerDomain, fmt.Sprintf(`{"attestation_id":"%s"}`, attestationID), 1,
+		`INSERT INTO ledger_log (action, attestation_id, sender_email, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
+		"confirm", attestationID, confirmerEmail, fmt.Sprintf(`{"attestation_id":"%s"}`, attestationID), 1,
 	)
 	if err != nil {
 		return fmt.Errorf("log confirmation: %w", err)
@@ -197,11 +196,11 @@ func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error
 	// Create bilateral edges (both directions)
 	weight := computeWeight(a.Payload)
 	for _, edge := range []struct{ from, to string }{
-		{a.AttestorDomain, subjectDomain},
-		{subjectDomain, a.AttestorDomain},
+		{a.AttestorEmail, a.SubjectEmail},
+		{a.SubjectEmail, a.AttestorEmail},
 	} {
 		_, err = tx.Exec(
-			`INSERT INTO trust_edges (attestation_id, from_domain, to_domain, kind, attestation_type, weight) VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO trust_edges (attestation_id, from_addr, to_addr, kind, attestation_type, weight) VALUES (?, ?, ?, ?, ?, ?)`,
 			attestationID, edge.from, edge.to, EdgeBilateral, a.Type, weight,
 		)
 		if err != nil {
@@ -214,18 +213,18 @@ func (l *Ledger) ConfirmAttestation(attestationID, confirmerDomain string) error
 
 // RevokeAttestation removes edges and marks the attestation as revoked.
 // Either party can revoke.
-func (l *Ledger) RevokeAttestation(attestationID, senderDomain, reason string) error {
+func (l *Ledger) RevokeAttestation(attestationID, senderEmail, reason string) error {
 	tx, err := l.conn.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	var attestorDomain, subjectEmail string
+	var attestorEmail, subjectEmail string
 	var status AttestationStatus
 	err = tx.QueryRow(
-		`SELECT attestor_domain, subject_email, status FROM attestations WHERE id = ?`, attestationID,
-	).Scan(&attestorDomain, &subjectEmail, &status)
+		`SELECT attestor_email, subject_email, status FROM attestations WHERE id = ?`, attestationID,
+	).Scan(&attestorEmail, &subjectEmail, &status)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("attestation %s not found", attestationID)
 	}
@@ -238,9 +237,8 @@ func (l *Ledger) RevokeAttestation(attestationID, senderDomain, reason string) e
 	}
 
 	// Verify sender is either the attestor or the subject
-	subjectDomain := domainFromEmail(subjectEmail)
-	if senderDomain != attestorDomain && senderDomain != subjectDomain {
-		return fmt.Errorf("sender %s is neither attestor (%s) nor subject (%s)", senderDomain, attestorDomain, subjectDomain)
+	if senderEmail != attestorEmail && senderEmail != subjectEmail {
+		return fmt.Errorf("sender %s is neither attestor (%s) nor subject (%s)", senderEmail, attestorEmail, subjectEmail)
 	}
 
 	now := time.Now()
@@ -264,8 +262,8 @@ func (l *Ledger) RevokeAttestation(attestationID, senderDomain, reason string) e
 		"reason":         reason,
 	})
 	_, err = tx.Exec(
-		`INSERT INTO ledger_log (action, attestation_id, sender_domain, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
-		"revoke", attestationID, senderDomain, string(logPayload), 1,
+		`INSERT INTO ledger_log (action, attestation_id, sender_email, raw_payload, dkim_verified) VALUES (?, ?, ?, ?, ?)`,
+		"revoke", attestationID, senderEmail, string(logPayload), 1,
 	)
 	if err != nil {
 		return fmt.Errorf("log revocation: %w", err)
@@ -281,9 +279,9 @@ func (l *Ledger) GetAttestation(id string) (*Attestation, error) {
 	var dkimInt int
 	var confirmedAt, revokedAt sql.NullTime
 	err := l.conn.QueryRow(
-		`SELECT id, attestation_type, attestor_domain, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
+		`SELECT id, attestation_type, attestor_email, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
 		 FROM attestations WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Type, &a.AttestorDomain, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
+	).Scan(&a.ID, &a.Type, &a.AttestorEmail, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
 		&payloadJSON, &publishedJSON, &a.ReceivedAt, &confirmedAt, &revokedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -303,12 +301,12 @@ func (l *Ledger) GetAttestation(id string) (*Attestation, error) {
 	return &a, nil
 }
 
-// GetEdgesForDomain returns all trust edges involving a domain (as source or target).
-func (l *Ledger) GetEdgesForDomain(domain string) ([]TrustEdge, error) {
+// GetEdgesForAddr returns all trust edges involving an address (as source or target).
+func (l *Ledger) GetEdgesForAddr(addr string) ([]TrustEdge, error) {
 	rows, err := l.conn.Query(
-		`SELECT id, attestation_id, from_domain, to_domain, kind, attestation_type, weight, created_at
-		 FROM trust_edges WHERE from_domain = ? OR to_domain = ? ORDER BY created_at DESC`,
-		domain, domain,
+		`SELECT id, attestation_id, from_addr, to_addr, kind, attestation_type, weight, created_at
+		 FROM trust_edges WHERE from_addr = ? OR to_addr = ? ORDER BY created_at DESC`,
+		addr, addr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get edges: %w", err)
@@ -318,7 +316,7 @@ func (l *Ledger) GetEdgesForDomain(domain string) ([]TrustEdge, error) {
 	var edges []TrustEdge
 	for rows.Next() {
 		var e TrustEdge
-		if err := rows.Scan(&e.ID, &e.AttestationID, &e.FromDomain, &e.ToDomain, &e.Kind, &e.AttestationType, &e.Weight, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AttestationID, &e.FromAddr, &e.ToAddr, &e.Kind, &e.AttestationType, &e.Weight, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan edge: %w", err)
 		}
 		edges = append(edges, e)
@@ -326,10 +324,10 @@ func (l *Ledger) GetEdgesForDomain(domain string) ([]TrustEdge, error) {
 	return edges, rows.Err()
 }
 
-// GetNode returns aggregated trust info for a domain.
-func (l *Ledger) GetNode(domain string) (*TrustNode, error) {
+// GetNode returns aggregated trust info for an address.
+func (l *Ledger) GetNode(addr string) (*TrustNode, error) {
 	var node TrustNode
-	node.Domain = domain
+	node.Addr = addr
 
 	err := l.conn.QueryRow(
 		`SELECT COUNT(*),
@@ -337,8 +335,8 @@ func (l *Ledger) GetNode(domain string) (*TrustNode, error) {
 			COALESCE(SUM(CASE WHEN kind = 'unilateral' THEN 1 ELSE 0 END), 0),
 			COALESCE(MIN(created_at), ''),
 			COALESCE(MAX(created_at), '')
-		 FROM trust_edges WHERE from_domain = ? OR to_domain = ?`,
-		domain, domain,
+		 FROM trust_edges WHERE from_addr = ? OR to_addr = ?`,
+		addr, addr,
 	).Scan(&node.EdgeCount, &node.BilateralCount, &node.UnilateralCount, &node.OldestEdge, &node.NewestEdge)
 	if err != nil {
 		return nil, fmt.Errorf("get node: %w", err)
@@ -349,7 +347,7 @@ func (l *Ledger) GetNode(domain string) (*TrustNode, error) {
 // GetGraph returns all edges in the trust graph.
 func (l *Ledger) GetGraph() ([]TrustEdge, error) {
 	rows, err := l.conn.Query(
-		`SELECT id, attestation_id, from_domain, to_domain, kind, attestation_type, weight, created_at
+		`SELECT id, attestation_id, from_addr, to_addr, kind, attestation_type, weight, created_at
 		 FROM trust_edges ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -360,7 +358,7 @@ func (l *Ledger) GetGraph() ([]TrustEdge, error) {
 	var edges []TrustEdge
 	for rows.Next() {
 		var e TrustEdge
-		if err := rows.Scan(&e.ID, &e.AttestationID, &e.FromDomain, &e.ToDomain, &e.Kind, &e.AttestationType, &e.Weight, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AttestationID, &e.FromAddr, &e.ToAddr, &e.Kind, &e.AttestationType, &e.Weight, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan edge: %w", err)
 		}
 		edges = append(edges, e)
@@ -374,7 +372,7 @@ func (l *Ledger) GetLedgerLog(limit int) ([]map[string]any, error) {
 		limit = 100
 	}
 	rows, err := l.conn.Query(
-		`SELECT id, action, attestation_id, sender_domain, raw_payload, dkim_verified, created_at
+		`SELECT id, action, attestation_id, sender_email, raw_payload, dkim_verified, created_at
 		 FROM ledger_log ORDER BY id DESC LIMIT ?`, limit,
 	)
 	if err != nil {
@@ -385,17 +383,17 @@ func (l *Ledger) GetLedgerLog(limit int) ([]map[string]any, error) {
 	var entries []map[string]any
 	for rows.Next() {
 		var id int64
-		var action, attestationID, senderDomain, rawPayload string
+		var action, attestationID, senderEmail, rawPayload string
 		var dkimVerified int
 		var createdAt string
-		if err := rows.Scan(&id, &action, &attestationID, &senderDomain, &rawPayload, &dkimVerified, &createdAt); err != nil {
+		if err := rows.Scan(&id, &action, &attestationID, &senderEmail, &rawPayload, &dkimVerified, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan log: %w", err)
 		}
 		entries = append(entries, map[string]any{
 			"id":              id,
 			"action":          action,
 			"attestation_id":  attestationID,
-			"sender_domain":   senderDomain,
+			"sender_email":    senderEmail,
 			"raw_payload":     rawPayload,
 			"dkim_verified":   dkimVerified == 1,
 			"created_at":      createdAt,
@@ -407,7 +405,7 @@ func (l *Ledger) GetLedgerLog(limit int) ([]map[string]any, error) {
 // GetAttestationsForSubject returns all attestations about a given email/domain.
 func (l *Ledger) GetAttestationsForSubject(subjectEmail string) ([]Attestation, error) {
 	rows, err := l.conn.Query(
-		`SELECT id, attestation_type, attestor_domain, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
+		`SELECT id, attestation_type, attestor_email, subject_email, status, edge_kind, dkim_verified, payload, published_fields, received_at, confirmed_at, revoked_at
 		 FROM attestations WHERE subject_email = ? AND status != 'revoked' ORDER BY received_at DESC`,
 		subjectEmail,
 	)
@@ -422,7 +420,7 @@ func (l *Ledger) GetAttestationsForSubject(subjectEmail string) ([]Attestation, 
 		var payloadJSON, publishedJSON string
 		var dkimInt int
 		var confirmedAt, revokedAt sql.NullTime
-		if err := rows.Scan(&a.ID, &a.Type, &a.AttestorDomain, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
+		if err := rows.Scan(&a.ID, &a.Type, &a.AttestorEmail, &a.SubjectEmail, &a.Status, &a.EdgeKind, &dkimInt,
 			&payloadJSON, &publishedJSON, &a.ReceivedAt, &confirmedAt, &revokedAt); err != nil {
 			return nil, fmt.Errorf("scan attestation: %w", err)
 		}
@@ -451,37 +449,37 @@ func (l *Ledger) SetPublishPreference(pref *PublishPreference) error {
 	return err
 }
 
-// GetTrustedDomains returns domains that meet minimum edge thresholds.
+// GetTrustedAddrs returns addresses that meet minimum edge thresholds.
 // This is the primitive curators use to build allowlists.
-func (l *Ledger) GetTrustedDomains(minEdges int, minBilateral int) ([]TrustNode, error) {
+func (l *Ledger) GetTrustedAddrs(minEdges int, minBilateral int) ([]TrustNode, error) {
 	rows, err := l.conn.Query(
-		`SELECT domain, edge_count, bilateral_count, unilateral_count, oldest_edge, newest_edge FROM (
+		`SELECT addr, edge_count, bilateral_count, unilateral_count, oldest_edge, newest_edge FROM (
 			SELECT
-				domain,
+				addr,
 				COUNT(*) as edge_count,
 				SUM(CASE WHEN kind = 'bilateral' THEN 1 ELSE 0 END) as bilateral_count,
 				SUM(CASE WHEN kind = 'unilateral' THEN 1 ELSE 0 END) as unilateral_count,
 				MIN(created_at) as oldest_edge,
 				MAX(created_at) as newest_edge
 			FROM (
-				SELECT from_domain as domain, kind, created_at FROM trust_edges
+				SELECT from_addr as addr, kind, created_at FROM trust_edges
 				UNION ALL
-				SELECT to_domain as domain, kind, created_at FROM trust_edges
+				SELECT to_addr as addr, kind, created_at FROM trust_edges
 			)
-			GROUP BY domain
+			GROUP BY addr
 		) WHERE edge_count >= ? AND bilateral_count >= ?
 		ORDER BY edge_count DESC`,
 		minEdges, minBilateral,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("get trusted domains: %w", err)
+		return nil, fmt.Errorf("get trusted addrs: %w", err)
 	}
 	defer rows.Close()
 
 	var nodes []TrustNode
 	for rows.Next() {
 		var n TrustNode
-		if err := rows.Scan(&n.Domain, &n.EdgeCount, &n.BilateralCount, &n.UnilateralCount, &n.OldestEdge, &n.NewestEdge); err != nil {
+		if err := rows.Scan(&n.Addr, &n.EdgeCount, &n.BilateralCount, &n.UnilateralCount, &n.OldestEdge, &n.NewestEdge); err != nil {
 			return nil, fmt.Errorf("scan node: %w", err)
 		}
 		nodes = append(nodes, n)
@@ -509,12 +507,3 @@ func computeWeight(payload map[string]any) float64 {
 	return weight
 }
 
-// domainFromEmail extracts the domain part from an email address.
-func domainFromEmail(email string) string {
-	for i := len(email) - 1; i >= 0; i-- {
-		if email[i] == '@' {
-			return email[i+1:]
-		}
-	}
-	return email // if no @, treat the whole thing as a domain
-}
