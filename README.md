@@ -110,3 +110,9 @@ cd sdk-ios && swift test       # iOS SDK tests
 ## Privacy
 
 SDK extracts intent and embeds it locally — no chat text leaves the device. The embedding is encrypted with the [enclave](https://github.com/kimjune01/vectorspace-enclave)'s attested public key and sent to the server as ciphertext. The server passes it to the TEE, which decrypts, runs the auction with live budgets, returns `{winner_id, payment}`, and zeros the embedding. The exchange never sees the query.
+
+## Formal verification & contact
+
+The auction mechanism (VCG pricing, `log(price) - dist²/σ²` scoring) is formally verified in Lean 4 with zero `sorry`. Paper: **[Formally Verified VCG Mechanisms for Advertising in Embedding Spaces](https://june.kim/formally-verified-vcg-mechanisms)**. Proofs: **[kimjune01/auction-proof](https://github.com/kimjune01/auction-proof)**.
+
+Maintained by June Kim, <june@june.kim>.
