@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.GitHash=${GIT_HASH}" -o /vectorspac
 
 # Stage 2: Build portal frontend
 FROM node:22-alpine AS portal-builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.24.0 --activate
 WORKDIR /app/portal
 COPY portal/package.json portal/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
