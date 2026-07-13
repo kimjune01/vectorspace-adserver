@@ -1,5 +1,5 @@
 import XCTest
-@testable import CloudX
+@testable import VectorSpace
 
 // MARK: - Model decoding tests
 
@@ -222,12 +222,12 @@ final class ProximityTests: XCTestCase {
     }
 }
 
-// MARK: - CloudX client init tests
+// MARK: - VectorSpace client init tests
 
-final class CloudXInitTests: XCTestCase {
+final class VectorSpaceInitTests: XCTestCase {
 
     func testEndpointTrailingSlashTrimmed() {
-        let client = CloudX(endpoint: "http://localhost:8080/")
+        let client = VectorSpace(endpoint: "http://localhost:8080/")
         // Verify it doesn't crash and produces a usable client.
         // The trailing slash is trimmed internally.
         let results = client.proximity(queryEmbedding: [0.1, 0.2])
@@ -235,24 +235,24 @@ final class CloudXInitTests: XCTestCase {
     }
 
     func testEndpointNoTrailingSlash() {
-        let client = CloudX(endpoint: "http://localhost:8080")
+        let client = VectorSpace(endpoint: "http://localhost:8080")
         let results = client.proximity(queryEmbedding: [0.1, 0.2])
         XCTAssertTrue(results.isEmpty)
     }
 }
 
-// MARK: - CloudXError tests
+// MARK: - VectorSpaceError tests
 
-final class CloudXErrorTests: XCTestCase {
+final class VectorSpaceErrorTests: XCTestCase {
 
     func testErrorDescriptions() {
-        let urlError = CloudXError.invalidURL("bad://url")
+        let urlError = VectorSpaceError.invalidURL("bad://url")
         XCTAssertTrue(urlError.localizedDescription.contains("Invalid URL"))
 
-        let httpError = CloudXError.httpError(statusCode: 500, body: "internal error")
+        let httpError = VectorSpaceError.httpError(statusCode: 500, body: "internal error")
         XCTAssertTrue(httpError.localizedDescription.contains("500"))
 
-        let noBidders = CloudXError.noBidders
+        let noBidders = VectorSpaceError.noBidders
         XCTAssertTrue(noBidders.localizedDescription.contains("No bidders"))
     }
 }

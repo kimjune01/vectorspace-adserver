@@ -1,5 +1,5 @@
 # Reference SDK: sdk-web/ (TypeScript). This SDK follows the API surface defined there.
-"""CloudX Publisher SDK — Python client."""
+"""VectorSpace Publisher SDK — Python client."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import urllib.error
 import json
 
 
-class CloudX:
-    """Minimal Python client for the CloudX ad server."""
+class VectorSpace:
+    """Minimal Python client for the VectorSpace ad server."""
 
     def __init__(self, endpoint: str) -> None:
         self.endpoint = endpoint.rstrip("/")

@@ -26,6 +26,26 @@ func SquaredEuclideanDistance(a, b []float64) float64 {
 	return sum
 }
 
+// scoreDistanceTerm computes the distance penalty ||x - c||² / σ² for a bid
+// at a query point. Bids without an embedding (or with no query point) carry
+// no penalty. σ = 0 is the keyword limit: zero penalty at the exact point,
+// infinite penalty anywhere else. Exact equality is meaningful because the
+// embedder is deterministic and cached — identical text yields identical
+// vectors. See: june.kim/keywords-are-tiny-circles
+func scoreDistanceTerm(bid *CoreBid, queryEmbedding []float64) float64 {
+	if len(bid.Embedding) == 0 || len(queryEmbedding) == 0 {
+		return 0
+	}
+	distSq := SquaredEuclideanDistance(bid.Embedding, queryEmbedding)
+	if bid.Sigma == 0 {
+		if distSq == 0 {
+			return 0
+		}
+		return math.Inf(1)
+	}
+	return distSq / (bid.Sigma * bid.Sigma)
+}
+
 // ComputeScore calculates an advertiser's score at a query point.
 // score_i(x) = log_B(b_i) - ||x - c_i||² / σ_i²
 // See: june.kim/power-diagrams-ad-auctions
@@ -33,12 +53,9 @@ func ComputeScore(bid CoreBid, queryEmbedding []float64) float64 {
 	if bid.Price <= 0 {
 		return math.Inf(-1)
 	}
-	if len(bid.Embedding) == 0 || len(queryEmbedding) == 0 {
-		return logB(bid.Price)
-	}
-	if bid.Sigma == 0 {
+	term := scoreDistanceTerm(&bid, queryEmbedding)
+	if math.IsInf(term, 1) {
 		return math.Inf(-1)
 	}
-	distSq := SquaredEuclideanDistance(bid.Embedding, queryEmbedding)
-	return logB(bid.Price) - distSq/(bid.Sigma*bid.Sigma)
+	return logB(bid.Price) - term
 }

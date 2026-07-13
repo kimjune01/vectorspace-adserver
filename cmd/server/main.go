@@ -309,9 +309,9 @@ func main() {
 	}
 
 	if *hfToken != "" {
-		log.Printf("CloudX Ad Server starting on :8080 (embeddings: Hugging Face)")
+		log.Printf("VectorSpace Ad Server starting on :8080 (embeddings: Hugging Face)")
 	} else {
-		log.Printf("CloudX Ad Server starting on :8080 (sidecar: %s)", *sidecarURL)
+		log.Printf("VectorSpace Ad Server starting on :8080 (sidecar: %s)", *sidecarURL)
 	}
 	if *anthropicKey != "" {
 		log.Println("Chat proxy enabled (Anthropic API key configured)")

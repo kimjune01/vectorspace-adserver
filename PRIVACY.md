@@ -45,7 +45,7 @@ Browser                          Exchange
 #### Components
 
 - **`GET /embeddings`** returns `{id, name, embedding, bid_price, sigma, currency}` per advertiser. Cached via ETag.
-- **`CloudX.runLocalAuction()`** replicates server scoring: `score = log_5(price) - dist^2/sigma^2`. VCG payment: `runner_up_price * 5^(distW^2/sigmaW^2 - distR^2/sigmaR^2)`, capped at winner's bid.
+- **`VectorSpace.runLocalAuction()`** replicates server scoring: `score = log_5(price) - dist^2/sigma^2`. VCG payment: `runner_up_price * 5^(distW^2/sigmaW^2 - distR^2/sigmaR^2)`, capped at winner's bid.
 - **`POST /ad-claim`** records the claim for billing. Validates `winner_id` exists and `payment <= bid_price`. Logs with `intent = "[private]"`.
 - **`FrequencyCapLocal`** tracks impressions in-memory per advertiser. No user ID ever leaves the browser.
 - **`buildClickURL()`** omits `utm_term` when intent is `"[private]"`.

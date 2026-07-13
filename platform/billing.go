@@ -90,10 +90,13 @@ func (b *BudgetTracker) Charge(advertiserID string, amount float64) bool {
 	}
 	b.spent[advertiserID] += amount
 
-	// Persist to DB
+	// Persist to DB; a failed persist rolls back the in-memory charge so
+	// callers can trust the boolean.
 	if b.db != nil {
 		if _, err := b.db.Charge(advertiserID, amount); err != nil {
-			log.Printf("WARN: failed to persist charge for %s: %v", advertiserID, err)
+			b.spent[advertiserID] -= amount
+			log.Printf("WARN: failed to persist charge for %s, rolled back: %v", advertiserID, err)
+			return false
 		}
 	}
 

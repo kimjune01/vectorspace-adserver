@@ -20,18 +20,25 @@ func SyncFromPlatform(proxy TEEProxyInterface, registry *platform.PositionRegist
 			BidPrice:  pos.BidPrice,
 			Currency:  pos.Currency,
 			URL:       pos.URL,
+			BudgetID:  pos.BudgetID,
 		}
 	}
 	proxy.SyncPositions(posSnaps)
 
 	var budgetSnaps []enclave.BudgetSnapshot
+	seen := make(map[string]bool)
 	for _, pos := range positions {
-		info := budgets.GetInfo(pos.ID)
+		key := pos.BudgetKey()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		info := budgets.GetInfo(key)
 		if info == nil {
 			continue
 		}
 		budgetSnaps = append(budgetSnaps, enclave.BudgetSnapshot{
-			AdvertiserID: pos.ID,
+			AdvertiserID: key,
 			Total:        info.Total,
 			Spent:        info.Spent,
 			Currency:     info.Currency,

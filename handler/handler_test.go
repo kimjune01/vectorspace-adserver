@@ -131,6 +131,40 @@ func teeAdRequest(t *testing.T, router http.Handler, proxy *tee.MockTEEProxy, po
 	return w
 }
 
+// runORTBAuction runs a live auction through /openrtb2/auction and returns
+// the logged auction ID and winner position ID.
+func runORTBAuction(t *testing.T, router http.Handler, query string) (int64, string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":  "req-test",
+		"imp": []map[string]interface{}{{"id": "1"}},
+		"ext": map[string]interface{}{"vectorspace": map[string]interface{}{"intent": query}},
+	})
+	req := httptest.NewRequest("POST", "/openrtb2/auction", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ortb auction: status %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		SeatBid []struct {
+			Bid []struct {
+				ID  string `json:"id"`
+				Ext struct {
+					Vectorspace struct {
+						AuctionID int64 `json:"auction_id"`
+					} `json:"vectorspace"`
+				} `json:"ext"`
+			} `json:"bid"`
+		} `json:"seatbid"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.SeatBid) == 0 || len(resp.SeatBid[0].Bid) == 0 {
+		t.Fatal("ortb auction: empty seatbid")
+	}
+	return resp.SeatBid[0].Bid[0].Ext.Vectorspace.AuctionID, resp.SeatBid[0].Bid[0].ID
+}
+
 func registerAdvertiser(t *testing.T, router http.Handler, name, intent string, sigma, bidPrice, budget float64) map[string]interface{} {
 	t.Helper()
 	body := map[string]interface{}{
@@ -463,14 +497,18 @@ func TestStatsEndpoint(t *testing.T) {
 		t.Errorf("initial auction_count = %v, want 0", stats["auction_count"])
 	}
 
-	// Do a TEE ad request
+	// Do a TEE ad request. Two bidders: with only one, the VCG payment is
+	// the reserve (zero here), and total_spend would legitimately stay 0.
 	registerAdvertiser(t, router, "Adv1", "intent", 0.5, 2.0, 1000.0)
+	registerAdvertiser(t, router, "Adv2", "other", 0.5, 1.5, 1000.0)
 	adW := teeAdRequest(t, router, proxy,
 		[]enclave.PositionSnapshot{
 			{ID: "adv-1", Name: "Adv1", Embedding: []float64{0.01, 0.02, 0.03}, Sigma: 0.5, BidPrice: 2.0, Currency: "USD"},
+			{ID: "adv-2", Name: "Adv2", Embedding: []float64{0.05, 0.06, 0.07}, Sigma: 0.5, BidPrice: 1.5, Currency: "USD"},
 		},
 		[]enclave.BudgetSnapshot{
 			{AdvertiserID: "adv-1", Total: 1000, Spent: 0, Currency: "USD"},
+			{AdvertiserID: "adv-2", Total: 1000, Spent: 0, Currency: "USD"},
 		},
 		"",
 	)

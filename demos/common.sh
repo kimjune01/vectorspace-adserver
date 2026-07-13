@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for demo scripts
-SERVER="${CLOUDX_SERVER:-http://localhost:8080}"
+SERVER="${VECTORSPACE_SERVER:-http://localhost:8080}"
 
 JQ_FMT='{winner: .winner.name, bid_count: .bid_count, top_5: [.all_bidders[:5][] | {name, distance_sq: (.distance_sq * 1000 | round / 1000), bid: .bid_price}]}'
 

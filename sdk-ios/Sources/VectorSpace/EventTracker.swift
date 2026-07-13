@@ -1,6 +1,6 @@
 import Foundation
 
-/// Handles impression, click, and viewable event reporting to the CloudX server.
+/// Handles impression, click, and viewable event reporting to the VectorSpace server.
 final class EventTracker: @unchecked Sendable {
     private let endpoint: String
     private let session: URLSession
@@ -20,7 +20,7 @@ final class EventTracker: @unchecked Sendable {
         do {
             try await post(path: "/event/impression", body: body)
             return true
-        } catch CloudXError.httpError(statusCode: 429, _) {
+        } catch VectorSpaceError.httpError(statusCode: 429, _) {
             return false
         }
     }
@@ -45,7 +45,7 @@ final class EventTracker: @unchecked Sendable {
 
     private func post<T: Encodable>(path: String, body: T) async throws {
         guard let url = URL(string: "\(endpoint)\(path)") else {
-            throw CloudXError.invalidURL("\(endpoint)\(path)")
+            throw VectorSpaceError.invalidURL("\(endpoint)\(path)")
         }
 
         var request = URLRequest(url: url)
@@ -58,7 +58,7 @@ final class EventTracker: @unchecked Sendable {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? ""
-            throw CloudXError.httpError(statusCode: httpResponse.statusCode, body: responseBody)
+            throw VectorSpaceError.httpError(statusCode: httpResponse.statusCode, body: responseBody)
         }
     }
 }

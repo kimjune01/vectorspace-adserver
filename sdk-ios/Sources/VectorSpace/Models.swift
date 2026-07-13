@@ -88,8 +88,8 @@ struct EventBody: Encodable {
 
 // MARK: - Errors
 
-/// Errors thrown by the CloudX SDK.
-public enum CloudXError: Error, LocalizedError {
+/// Errors thrown by the VectorSpace SDK.
+public enum VectorSpaceError: Error, LocalizedError {
     case invalidURL(String)
     case httpError(statusCode: Int, body: String)
     case decodingError(Error)

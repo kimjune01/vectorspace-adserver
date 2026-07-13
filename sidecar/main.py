@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 MODEL_NAME = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 TRUNCATE_DIM = int(os.getenv("TRUNCATE_DIM", "256"))
 
-app = FastAPI(title="CloudX Embedding Sidecar")
+app = FastAPI(title="VectorSpace Embedding Sidecar")
 model: SentenceTransformer | None = None
 
 

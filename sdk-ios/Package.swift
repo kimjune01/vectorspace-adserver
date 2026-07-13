@@ -3,26 +3,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "CloudX",
+    name: "VectorSpace",
     platforms: [
         .iOS(.v15),
         .macOS(.v12),
     ],
     products: [
         .library(
-            name: "CloudX",
-            targets: ["CloudX"]
+            name: "VectorSpace",
+            targets: ["VectorSpace"]
         ),
     ],
     targets: [
         .target(
-            name: "CloudX",
-            path: "Sources/CloudX"
+            name: "VectorSpace",
+            path: "Sources/VectorSpace"
         ),
         .testTarget(
-            name: "CloudXTests",
-            dependencies: ["CloudX"],
-            path: "Tests/CloudXTests"
+            name: "VectorSpaceTests",
+            dependencies: ["VectorSpace"],
+            path: "Tests/VectorSpaceTests"
         ),
     ]
 )

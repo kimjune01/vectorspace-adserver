@@ -1,4 +1,4 @@
-# CloudX Ad Server — Build & Deploy
+# VectorSpace Ad Server — Build & Deploy
 
 .PHONY: dev staging prod test build-server build-portal build-landing clean deploy test-skills test-skill grade-skill
 

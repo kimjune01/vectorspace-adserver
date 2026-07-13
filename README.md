@@ -59,12 +59,14 @@ cd portal && pnpm dev
 
 ### Publisher
 - `POST /ad-request` — Run auction. Body: `{intent, tau?, publisher_id?}`
+- `POST /openrtb2/auction` — OpenRTB 2.5 wire format: standard BidRequest in (query from `ext.vectorspace.{embedding,intent}` or comma-separated `content.keywords`/`user.keywords`, each keyword matched separately), standard BidResponse out. Two declared deviations from stock 2.5 semantics: settlement is per-click VCG (`bid.price` = amount charged on click, `bid.ext.vectorspace.settlement = "cpc-vcg"`), and `adm` is an HTML snippet whose click-through routes via `GET /click` — rendering it as-is settles correctly. `test=1` is honored (never logged, never billable). Plaintext path; the private path is `/ad-request`
+- `GET /click?auction_id=` — settlement redirect: charges the winner's budget on first click, then 302s to the advertiser URL
 - `POST /ad-claim` — Record SDK-side auction result. Body: `{winner_id, payment, publisher_id}`
 - `GET /embeddings` — Advertiser embeddings (ETag caching)
 - `POST /embed` — Embed text via sidecar
 
 ### Advertiser
-- `POST /advertiser/register` — Register (returns token). Body: `{name, intent, sigma, bid_price, budget}`
+- `POST /advertiser/register` — Register (returns token). Body: `{name, intent, sigma, bid_price, budget}` or `{name, keywords: [...], bid_price, budget}` — the keyword-import path: one position per keyword at σ = 0 (the exact-match limit), all spending one shared budget held by the first position
 - `PUT /advertiser/{id}` — Update
 - `DELETE /advertiser/{id}` — Delete
 - `GET /positions` — List all

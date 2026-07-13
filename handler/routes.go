@@ -105,6 +105,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.HandleFunc("/simulate", adminAuthMiddleware(cfg.AdminPassword, pubHandler.HandleSimulate))
 	mux.HandleFunc("/chat", chatHandler.HandleChat)
 
+	// OpenRTB 2.5 interop endpoint (plaintext query; the private path is /ad-request)
+	ortbHandler := &OpenRTBHandler{Engine: cfg.Engine}
+	mux.HandleFunc("/openrtb2/auction", ortbHandler.HandleAuction)
+
 	// Publisher registration (admin-protected)
 	if cfg.DB != nil {
 		mux.HandleFunc("/publisher/register", adminAuthMiddleware(cfg.AdminPassword, pubHandler.HandleRegisterPublisher))
@@ -112,10 +116,11 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	// Event tracking endpoints
 	if cfg.DB != nil {
-		eventHandler := &EventHandler{DB: cfg.DB, Budgets: cfg.Budgets, FreqCapMax: freqCapMax, FreqCapWindow: freqCapWindow}
+		eventHandler := &EventHandler{DB: cfg.DB, Budgets: cfg.Budgets, Registry: cfg.Registry, FreqCapMax: freqCapMax, FreqCapWindow: freqCapWindow}
 		mux.HandleFunc("/event/impression", eventHandler.HandleImpression)
 		mux.HandleFunc("/event/click", eventHandler.HandleClick)
 		mux.HandleFunc("/event/viewable", eventHandler.HandleViewable)
+		mux.HandleFunc("/click", eventHandler.HandleClickRedirect)
 
 		// Portal endpoints (token-authenticated)
 		portalHandler := &PortalHandler{Registry: cfg.Registry, Budgets: cfg.Budgets, DB: cfg.DB}

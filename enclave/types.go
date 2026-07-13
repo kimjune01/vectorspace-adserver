@@ -33,6 +33,17 @@ type PositionSnapshot struct {
 	BidPrice  float64   `json:"bid_price"`
 	Currency  string    `json:"currency"`
 	URL       string    `json:"url"`
+	// BudgetID points at the position whose budget this one spends from
+	// (keyword-group members share the head's budget). Empty = own budget.
+	BudgetID string `json:"budget_id,omitempty"`
+}
+
+// BudgetKey returns the ID whose budget this position draws down.
+func (p *PositionSnapshot) BudgetKey() string {
+	if p.BudgetID != "" {
+		return p.BudgetID
+	}
+	return p.ID
 }
 
 // BudgetSnapshot is a budget record pushed from parent to enclave.

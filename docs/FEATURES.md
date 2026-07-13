@@ -14,7 +14,7 @@ An open, embedding-space ad auction protocol that replaces keyword advertising f
 
 4. **Relocation fees** -- Moving your position in embedding space costs money (proportional to distance moved). This prevents Hotelling drift, stabilizes the market, and rewards commitment.
 
-5. **Open protocol** -- Keywords are the special case where sigma approaches zero. The protocol is backwards-compatible with keyword advertising but generalizes to the full embedding space.
+5. **Open protocol** -- Keywords are the special case where sigma is zero: full score at the exact point, no score anywhere else (`auction/embedding.go`). Keyword campaigns import via `POST /advertiser/register` with `keywords: [...]` (one position per keyword, one shared budget), and OpenRTB 2.5 bid requests route through `POST /openrtb2/auction`. The protocol is backwards-compatible with keyword advertising and generalizes to the full embedding space.
 
 6. **Privacy by construction** -- The query embedding never leaves publisher infrastructure (phase 1) or the TEE (phase 2). There is no behavioral profile, no cookie, no tracking pixel.
 
@@ -304,7 +304,7 @@ All auctions run through the TEE enclave. The exchange operator never sees the q
 
 Enclave code: `enclave/` (self-contained, vendored auction logic, stdlib-only). Proxy interface: `tee/interface.go`.
 
-SDK encryption: hybrid RSA-OAEP + AES-256-GCM (`demo/src/cloudx-sdk.ts` encryptEmbedding).
+SDK encryption: hybrid RSA-OAEP + AES-256-GCM (`demo/src/vectorspace-sdk.ts` encryptEmbedding).
 
 ---
 

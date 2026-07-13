@@ -39,7 +39,7 @@ public final class EmbeddingCache: @unchecked Sendable {
     /// Uses If-None-Match / ETag for 304 caching so repeated calls are cheap.
     func sync() async throws {
         guard let url = URL(string: "\(endpoint)/embeddings") else {
-            throw CloudXError.invalidURL("\(endpoint)/embeddings")
+            throw VectorSpaceError.invalidURL("\(endpoint)/embeddings")
         }
 
         var request = URLRequest(url: url)
@@ -58,7 +58,7 @@ public final class EmbeddingCache: @unchecked Sendable {
 
         guard httpResponse.statusCode == 200 else {
             let body = String(data: data, encoding: .utf8) ?? ""
-            throw CloudXError.httpError(statusCode: httpResponse.statusCode, body: body)
+            throw VectorSpaceError.httpError(statusCode: httpResponse.statusCode, body: body)
         }
 
         let decoded = try JSONDecoder().decode(EmbeddingsResponse.self, from: data)

@@ -81,30 +81,41 @@ func (h *PortalHandler) handlePortalMeGet(w http.ResponseWriter, advertiserID st
 
 func (h *PortalHandler) handlePortalMeUpdate(w http.ResponseWriter, r *http.Request, advertiserID string) {
 	var req struct {
-		Name     string  `json:"name"`
-		Intent   string  `json:"intent"`
-		Sigma    float64 `json:"sigma"`
-		BidPrice float64 `json:"bid_price"`
-		Budget   float64 `json:"budget"`
-		URL      string  `json:"url"`
+		Name     string   `json:"name"`
+		Intent   string   `json:"intent"`
+		Sigma    *float64 `json:"sigma"` // pointer: omitted ≠ explicit 0 (keyword limit)
+		BidPrice float64  `json:"bid_price"`
+		Budget   float64  `json:"budget"`
+		URL      string   `json:"url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	pos, err := h.Registry.Update(advertiserID, req.Name, req.Intent, req.URL, req.Sigma, req.BidPrice)
+	sigma := -1.0 // negative = keep existing
+	if req.Sigma != nil {
+		if *req.Sigma < 0 {
+			http.Error(w, "sigma must not be negative", http.StatusBadRequest)
+			return
+		}
+		sigma = *req.Sigma
+	}
+
+	pos, err := h.Registry.Update(advertiserID, req.Name, req.Intent, req.URL, sigma, req.BidPrice)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	if req.Budget > 0 && h.DB != nil {
-		if err := h.DB.UpdateBudget(advertiserID, req.Budget); err != nil {
+		// Budget lives on the group head; updating a member routes there.
+		budgetID := pos.BudgetKey()
+		if err := h.DB.UpdateBudget(budgetID, req.Budget); err != nil {
 			http.Error(w, "failed to update budget: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		h.Budgets.Set(advertiserID, req.Budget, pos.Currency)
+		h.Budgets.Set(budgetID, req.Budget, pos.Currency)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -10,10 +10,13 @@ import "math"
 // winner and runner-up at the query location. The winner pays only enough to beat
 // the runner-up in embedding-adjusted score space.
 //
-// Caps:
-//   - Individual rationality: payment ≤ winner's bid price
-//   - Sanity cap: payment ≤ 10× winner's bid price
-func ComputeVCGPayment(result *AuctionResult, queryEmbedding []float64) float64 {
+// The payment is the winner's critical value: the larger of the
+// competitor-implied threshold and the reserve (bid floor). With no
+// runner-up, the critical value is the reserve alone — zero if the
+// publisher set none.
+//
+// Individual rationality: payment ≤ winner's bid price.
+func ComputeVCGPayment(result *AuctionResult, queryEmbedding []float64, bidFloor float64) float64 {
 	if result.Winner == nil {
 		return 0
 	}
@@ -23,27 +26,24 @@ func ComputeVCGPayment(result *AuctionResult, queryEmbedding []float64) float64 
 
 	if result.RunnerUp != nil {
 		ru := result.RunnerUp
-		distW2 := SquaredEuclideanDistance(winner.Embedding, queryEmbedding)
-		distR2 := SquaredEuclideanDistance(ru.Embedding, queryEmbedding)
-		sigmaW := winner.Sigma
-		sigmaR := ru.Sigma
+		// Use the same distance term as ComputeScore so the payment is the
+		// exact limit of the scoring rule, including the σ = 0 keyword case
+		// (an exact-match winner carries zero penalty; a runner-up cannot
+		// have an infinite penalty, or it would have scored -Inf and been
+		// excluded from ranking).
+		termW := scoreDistanceTerm(winner, queryEmbedding)
+		termR := scoreDistanceTerm(ru, queryEmbedding)
+		payment = ru.Price * math.Pow(LogBase, termW-termR)
+	}
 
-		if sigmaW > 0 && sigmaR > 0 {
-			payment = ru.Price * math.Pow(LogBase, distW2/(sigmaW*sigmaW)-distR2/(sigmaR*sigmaR))
-		} else {
-			payment = ru.Price
-		}
-	} else {
-		payment = winner.Price
+	// Reserve: the floor is a price-space threshold the winner had to clear.
+	if payment < bidFloor {
+		payment = bidFloor
 	}
 
 	// Individual rationality: never pay more than your bid
 	if payment > winner.Price {
 		payment = winner.Price
-	}
-	// Sanity cap
-	if payment > winner.Price*10 {
-		payment = winner.Price * 10
 	}
 
 	return payment

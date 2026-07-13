@@ -4,18 +4,18 @@ import Foundation
 import UIKit
 #endif
 
-/// CloudX Publisher SDK for iOS.
+/// VectorSpace Publisher SDK for iOS.
 ///
 /// Provides ad requesting, embedding-based proximity search, event tracking,
 /// and UIKit viewability observation.
 ///
 /// Usage:
 /// ```swift
-/// let client = CloudX(endpoint: "http://localhost:8080")
+/// let client = VectorSpace(endpoint: "http://localhost:8080")
 /// try await client.syncEmbeddings()
 /// let ad = try await client.requestAd(intent: "back pain relief")
 /// ```
-public final class CloudX: @unchecked Sendable {
+public final class VectorSpace: @unchecked Sendable {
     private let endpoint: String
     private let session: URLSession
     private let embeddingCache: EmbeddingCache
@@ -27,8 +27,8 @@ public final class CloudX: @unchecked Sendable {
     private let observerLock = NSLock()
     #endif
 
-    /// Creates a new CloudX client.
-    /// - Parameter endpoint: Base URL of the CloudX ad server (e.g. "http://localhost:8080").
+    /// Creates a new VectorSpace client.
+    /// - Parameter endpoint: Base URL of the VectorSpace ad server (e.g. "http://localhost:8080").
     public init(endpoint: String) {
         let trimmed = endpoint.hasSuffix("/")
             ? String(endpoint.dropLast())
@@ -39,7 +39,7 @@ public final class CloudX: @unchecked Sendable {
         self.eventTracker = EventTracker(endpoint: trimmed, session: URLSession.shared)
     }
 
-    /// Creates a new CloudX client with a custom URLSession (useful for testing).
+    /// Creates a new VectorSpace client with a custom URLSession (useful for testing).
     init(endpoint: String, session: URLSession) {
         let trimmed = endpoint.hasSuffix("/")
             ? String(endpoint.dropLast())
@@ -71,7 +71,7 @@ public final class CloudX: @unchecked Sendable {
     /// - Returns: The embedding vector.
     public func embed(text: String) async throws -> [Float] {
         guard let url = URL(string: "\(endpoint)/embed") else {
-            throw CloudXError.invalidURL("\(endpoint)/embed")
+            throw VectorSpaceError.invalidURL("\(endpoint)/embed")
         }
 
         var request = URLRequest(url: url)
@@ -81,12 +81,12 @@ public final class CloudX: @unchecked Sendable {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw CloudXError.httpError(statusCode: 0, body: "No HTTP response")
+            throw VectorSpaceError.httpError(statusCode: 0, body: "No HTTP response")
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
-            throw CloudXError.httpError(statusCode: httpResponse.statusCode, body: body)
+            throw VectorSpaceError.httpError(statusCode: httpResponse.statusCode, body: body)
         }
 
         let decoded = try JSONDecoder().decode(EmbedResponse.self, from: data)
@@ -102,7 +102,7 @@ public final class CloudX: @unchecked Sendable {
     /// - Returns: The ad response, or `nil` if no bidders passed the relevance threshold.
     public func requestAd(intent: String, tau: Double? = nil) async throws -> AdResponse? {
         guard let url = URL(string: "\(endpoint)/ad-request") else {
-            throw CloudXError.invalidURL("\(endpoint)/ad-request")
+            throw VectorSpaceError.invalidURL("\(endpoint)/ad-request")
         }
 
         var payload: [String: Any] = ["intent": intent]
@@ -119,7 +119,7 @@ public final class CloudX: @unchecked Sendable {
 
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw CloudXError.httpError(statusCode: 0, body: "No HTTP response")
+            throw VectorSpaceError.httpError(statusCode: 0, body: "No HTTP response")
         }
 
         if httpResponse.statusCode == 500 {
@@ -127,19 +127,19 @@ public final class CloudX: @unchecked Sendable {
             if body.contains("no bidders passed") {
                 return nil
             }
-            throw CloudXError.httpError(statusCode: 500, body: body)
+            throw VectorSpaceError.httpError(statusCode: 500, body: body)
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
-            throw CloudXError.httpError(statusCode: httpResponse.statusCode, body: body)
+            throw VectorSpaceError.httpError(statusCode: httpResponse.statusCode, body: body)
         }
 
         do {
             let decoded = try JSONDecoder().decode(AdResponse.self, from: data)
             return decoded
         } catch {
-            throw CloudXError.decodingError(error)
+            throw VectorSpaceError.decodingError(error)
         }
     }
 

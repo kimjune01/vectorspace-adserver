@@ -51,6 +51,7 @@ func (db *DB) createTables() error {
 		budget_total REAL NOT NULL,
 		budget_spent REAL NOT NULL DEFAULT 0,
 		currency TEXT NOT NULL DEFAULT 'USD',
+		budget_id TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -243,10 +244,10 @@ func (db *DB) InsertAdvertiser(pos *Position, budgetTotal float64) error {
 	}
 
 	_, err = db.conn.Exec(
-		`INSERT INTO advertisers (id, name, intent, embedding, sigma, bid_price, budget_total, currency, url)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO advertisers (id, name, intent, embedding, sigma, bid_price, budget_total, currency, url, budget_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pos.ID, pos.Name, pos.Intent, string(embJSON),
-		pos.Sigma, pos.BidPrice, budgetTotal, pos.Currency, pos.URL,
+		pos.Sigma, pos.BidPrice, budgetTotal, pos.Currency, pos.URL, pos.BudgetID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert advertiser: %w", err)
@@ -259,8 +260,8 @@ func (db *DB) GetAdvertiser(id string) (*Position, error) {
 	var pos Position
 	var embJSON string
 	err := db.conn.QueryRow(
-		`SELECT id, name, intent, embedding, sigma, bid_price, currency, url FROM advertisers WHERE id = ?`, id,
-	).Scan(&pos.ID, &pos.Name, &pos.Intent, &embJSON, &pos.Sigma, &pos.BidPrice, &pos.Currency, &pos.URL)
+		`SELECT id, name, intent, embedding, sigma, bid_price, currency, url, budget_id FROM advertisers WHERE id = ?`, id,
+	).Scan(&pos.ID, &pos.Name, &pos.Intent, &embJSON, &pos.Sigma, &pos.BidPrice, &pos.Currency, &pos.URL, &pos.BudgetID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -277,7 +278,7 @@ func (db *DB) GetAdvertiser(id string) (*Position, error) {
 // GetAllAdvertisers loads all advertisers from the database.
 func (db *DB) GetAllAdvertisers() ([]*Position, error) {
 	rows, err := db.conn.Query(
-		`SELECT id, name, intent, embedding, sigma, bid_price, currency, url FROM advertisers`,
+		`SELECT id, name, intent, embedding, sigma, bid_price, currency, url, budget_id FROM advertisers`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query advertisers: %w", err)
@@ -288,7 +289,7 @@ func (db *DB) GetAllAdvertisers() ([]*Position, error) {
 	for rows.Next() {
 		var pos Position
 		var embJSON string
-		if err := rows.Scan(&pos.ID, &pos.Name, &pos.Intent, &embJSON, &pos.Sigma, &pos.BidPrice, &pos.Currency, &pos.URL); err != nil {
+		if err := rows.Scan(&pos.ID, &pos.Name, &pos.Intent, &embJSON, &pos.Sigma, &pos.BidPrice, &pos.Currency, &pos.URL, &pos.BudgetID); err != nil {
 			return nil, fmt.Errorf("scan advertiser: %w", err)
 		}
 		if err := json.Unmarshal([]byte(embJSON), &pos.Embedding); err != nil {

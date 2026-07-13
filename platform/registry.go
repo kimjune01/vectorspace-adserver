@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -20,6 +21,18 @@ type Position struct {
 	BidPrice  float64   `json:"bid_price"`
 	Currency  string    `json:"currency"`
 	URL       string    `json:"url"`
+	// BudgetID points at the position whose budget this position spends from.
+	// Empty means the position holds its own budget. Keyword-group members
+	// all point at the group head, so one imported campaign spends one budget.
+	BudgetID string `json:"budget_id,omitempty"`
+}
+
+// BudgetKey returns the ID whose budget this position draws down.
+func (p *Position) BudgetKey() string {
+	if p.BudgetID != "" {
+		return p.BudgetID
+	}
+	return p.ID
 }
 
 // RelocationFeeConfig controls the fee schedule for position changes.
@@ -133,6 +146,89 @@ func (r *PositionRegistry) RegisterWithBudget(name, intent string, sigma, bidPri
 	return pos, nil
 }
 
+// RegisterKeywordGroupWithBudget registers one position per keyword, all
+// sharing a single budget held by the first position (the group head).
+// This is the import path for keyword campaigns: each keyword becomes a
+// σ-circle at its own embedding (σ = 0 by default, the exact-match limit),
+// and the group spends one budget, matching how a keyword campaign behaves
+// on the platform it was imported from.
+// See: june.kim/keywords-are-tiny-circles
+func (r *PositionRegistry) RegisterKeywordGroupWithBudget(name string, keywords []string, sigma, bidPrice, budget float64, currency, url string) ([]*Position, error) {
+	// Hygiene: trim, drop empties, deduplicate.
+	cleaned := make([]string, 0, len(keywords))
+	seen := make(map[string]bool)
+	for _, kw := range keywords {
+		kw = strings.TrimSpace(kw)
+		if kw == "" || seen[kw] {
+			continue
+		}
+		seen[kw] = true
+		cleaned = append(cleaned, kw)
+	}
+	if len(cleaned) == 0 {
+		return nil, fmt.Errorf("keywords must not be empty")
+	}
+
+	// The group is all-or-nothing: any failure rolls back every position
+	// registered so far, in memory and in the DB.
+	positions := make([]*Position, 0, len(cleaned))
+	rollback := func() {
+		for _, p := range positions {
+			r.mu.Lock()
+			delete(r.positions, p.ID)
+			r.invalidateVersion()
+			r.mu.Unlock()
+			if r.db != nil {
+				r.db.DeleteAdvertiser(p.ID)
+			}
+		}
+	}
+
+	var headID string
+	for i, kw := range cleaned {
+		pos, err := r.Register(fmt.Sprintf("%s [%s]", name, kw), kw, sigma, bidPrice, currency, url)
+		if err != nil {
+			rollback()
+			return nil, fmt.Errorf("embed keyword %q: %w", kw, err)
+		}
+
+		posBudget := 0.0
+		if i == 0 {
+			headID = pos.ID
+			posBudget = budget
+		} else {
+			pos.BudgetID = headID
+			r.mu.Lock()
+			r.positions[pos.ID] = pos
+			r.mu.Unlock()
+		}
+
+		if r.db != nil {
+			if err := r.db.InsertAdvertiser(pos, posBudget); err != nil {
+				r.mu.Lock()
+				delete(r.positions, pos.ID)
+				r.invalidateVersion()
+				r.mu.Unlock()
+				rollback()
+				return nil, fmt.Errorf("persist keyword position %q: %w", kw, err)
+			}
+			if err := r.db.RecordPositionChange(pos.ID, pos.Intent, pos.Embedding, pos.Sigma, pos.BidPrice, 0, 0); err != nil {
+				r.mu.Lock()
+				delete(r.positions, pos.ID)
+				r.invalidateVersion()
+				r.mu.Unlock()
+				r.db.DeleteAdvertiser(pos.ID)
+				rollback()
+				return nil, fmt.Errorf("record position history %q: %w", kw, err)
+			}
+		}
+
+		positions = append(positions, pos)
+	}
+
+	return positions, nil
+}
+
 // ComputeRelocationFee calculates the fee for moving a position by the given distance².
 func (r *PositionRegistry) ComputeRelocationFee(distanceSquared float64) float64 {
 	if distanceSquared <= 0 || r.RelocationFees.DistanceFactor <= 0 {
@@ -142,6 +238,8 @@ func (r *PositionRegistry) ComputeRelocationFee(distanceSquared float64) float64
 }
 
 // Update modifies an existing advertiser. Re-embeds if intent changed.
+// A negative sigma means "keep the existing sigma" — zero is a real value
+// (the keyword limit), so it cannot double as the omitted sentinel.
 func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice float64) (*Position, error) {
 	r.mu.RLock()
 	existing := r.positions[id]
@@ -166,7 +264,7 @@ func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice 
 	if intent == "" {
 		intent = existing.Intent
 	}
-	if sigma == 0 {
+	if sigma < 0 {
 		sigma = existing.Sigma
 	}
 	if bidPrice == 0 {
@@ -185,6 +283,7 @@ func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice 
 		BidPrice:  bidPrice,
 		Currency:  existing.Currency,
 		URL:       url,
+		BudgetID:  existing.BudgetID,
 	}
 
 	r.mu.Lock()
@@ -201,9 +300,9 @@ func (r *PositionRegistry) Update(id, name, intent, url string, sigma, bidPrice 
 		var relocationFee float64
 		if distMoved > 0 && r.RelocationFees.DistanceFactor > 0 {
 			relocationFee = r.RelocationFees.DistanceFactor * math.Sqrt(distMoved)
-			// Charge from budget
+			// Charge from budget (keyword-group members spend the head's budget)
 			if r.budgets != nil {
-				r.budgets.Charge(id, relocationFee)
+				r.budgets.Charge(existing.BudgetKey(), relocationFee)
 			}
 		}
 		r.db.RecordPositionChange(id, intent, embedding, sigma, bidPrice, distMoved, relocationFee)
@@ -225,7 +324,9 @@ func squaredEuclidean(a, b []float64) float64 {
 	return sum
 }
 
-// Delete removes an advertiser.
+// Delete removes an advertiser. Deleting a keyword-group head deletes the
+// whole group: members without the head would point at a budget that no
+// longer exists.
 func (r *PositionRegistry) Delete(id string) error {
 	r.mu.Lock()
 	_, exists := r.positions[id]
@@ -233,13 +334,23 @@ func (r *PositionRegistry) Delete(id string) error {
 		r.mu.Unlock()
 		return fmt.Errorf("advertiser %s not found", id)
 	}
-	delete(r.positions, id)
+	toDelete := []string{id}
+	for memberID, p := range r.positions {
+		if p.BudgetID == id {
+			toDelete = append(toDelete, memberID)
+		}
+	}
+	for _, did := range toDelete {
+		delete(r.positions, did)
+	}
 	r.invalidateVersion()
 	r.mu.Unlock()
 
 	if r.db != nil {
-		if err := r.db.DeleteAdvertiser(id); err != nil {
-			return err
+		for _, did := range toDelete {
+			if err := r.db.DeleteAdvertiser(did); err != nil {
+				return err
+			}
 		}
 	}
 

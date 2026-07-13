@@ -51,7 +51,7 @@ func TestSameResultAsDirectAuction(t *testing.T) {
 		})
 	}
 	directResult := auction.RunAuction(bids, 0, queryEmbedding)
-	directPayment := auction.ComputeVCGPayment(directResult, queryEmbedding)
+	directPayment := auction.ComputeVCGPayment(directResult, queryEmbedding, 0)
 
 	// --- Enclave path ---
 	embJSON, _ := json.Marshal(queryEmbedding)

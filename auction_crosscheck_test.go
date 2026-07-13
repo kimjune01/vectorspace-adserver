@@ -45,8 +45,8 @@ func TestAuctionCrossCheck(t *testing.T) {
 	}
 
 	// Same VCG payment
-	origPayment := original.ComputeVCGPayment(origResult, queryEmbedding)
-	vendPayment := vendored.ComputeVCGPayment(vendResult, queryEmbedding)
+	origPayment := original.ComputeVCGPayment(origResult, queryEmbedding, 0)
+	vendPayment := vendored.ComputeVCGPayment(vendResult, queryEmbedding, 0)
 	if math.Abs(origPayment-vendPayment) > 1e-15 {
 		t.Errorf("payment: original=%.15f, vendored=%.15f", origPayment, vendPayment)
 	}

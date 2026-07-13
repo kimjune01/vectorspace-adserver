@@ -110,12 +110,12 @@ func TestImpressionNoUserIDBypassesCap(t *testing.T) {
 func TestClickEvent(t *testing.T) {
 	router, _ := setupTestRouter(t)
 
-	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	advID := result["id"].(string)
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	auctionID, winnerID := runORTBAuction(t, router, "intent one")
 
 	body, _ := json.Marshal(map[string]interface{}{
-		"auction_id":    1,
-		"advertiser_id": advID,
+		"auction_id":    auctionID,
+		"advertiser_id": winnerID,
 		"user_id":       "u1",
 	})
 	req := httptest.NewRequest("POST", "/event/click", bytes.NewReader(body))
@@ -123,6 +123,19 @@ func TestClickEvent(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("click status = %d: %s", w.Code, w.Body.String())
+	}
+
+	// A click against a nonexistent auction is rejected, not silently logged.
+	body, _ = json.Marshal(map[string]interface{}{
+		"auction_id":    999999,
+		"advertiser_id": winnerID,
+		"user_id":       "u1",
+	})
+	req = httptest.NewRequest("POST", "/event/click", bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("click on unknown auction: status = %d, want 400", w.Code)
 	}
 }
 
@@ -427,13 +440,13 @@ func TestAdminAdvertisers(t *testing.T) {
 func TestAdminEvents(t *testing.T) {
 	router, _ := setupTestRouter(t)
 
-	result := registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
-	advID := result["id"].(string)
+	registerAdvertiser(t, router, "Adv1", "intent one", 0.5, 2.0, 1000.0)
+	auctionID, advID := runORTBAuction(t, router, "intent one")
 
 	// Log events
 	for _, evType := range []string{"/event/impression", "/event/click", "/event/viewable"} {
 		body, _ := json.Marshal(map[string]interface{}{
-			"auction_id": 1, "advertiser_id": advID, "user_id": "u1",
+			"auction_id": auctionID, "advertiser_id": advID, "user_id": "u1",
 		})
 		eventReq := httptest.NewRequest("POST", evType, bytes.NewReader(body))
 		eventW := httptest.NewRecorder()

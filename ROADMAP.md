@@ -81,3 +81,13 @@ Each gap mapped to the [embedding pipe](https://june.kim/embedding-pipe) and [pa
 Perceive through Remember is the forward pass — the system serves ads. Consolidate is the backward pass — the system learns to serve better ads. Right now, every parameter (σ, embeddings, trust weights, curator thresholds, publisher policies) is set by humans and stays fixed. The system has the job but no crontab.
 
 Filter (trust policy) is the immediate priority — it gates what enters the auction. Consolidate is next — it's what makes the gates adaptive. The [parts bin](https://june.kim/the-parts-bin) names the algorithms. The [embedding pipe](https://june.kim/embedding-pipe) maps the stages.
+
+## Known limitation: CPC liability is unreserved
+
+Budget eligibility checks the current balance against one bid at auction
+time; nothing reserves funds between the win and the click. An advertiser
+with $2 remaining can win many auctions before the first click arrives, and
+late charges simply fail. Real fix: reserve the maximum liability at win
+time and release or settle it on click/expiry (or define explicit postpaid
+credit limits). Flagged in external review 2026-07-13; deferred because it
+predates keyword groups and needs a reservation ledger with expiry.

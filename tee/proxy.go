@@ -78,6 +78,7 @@ func (p *TEEProxy) syncPositions() {
 			BidPrice:  pos.BidPrice,
 			Currency:  pos.Currency,
 			URL:       pos.URL,
+			BudgetID:  pos.BudgetID,
 		}
 	}
 
@@ -89,13 +90,19 @@ func (p *TEEProxy) syncPositions() {
 func (p *TEEProxy) syncBudgets() {
 	positions := p.registry.GetAll()
 	var snaps []enclave.BudgetSnapshot
+	seen := make(map[string]bool)
 	for _, pos := range positions {
-		info := p.budgets.GetInfo(pos.ID)
+		key := pos.BudgetKey()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		info := p.budgets.GetInfo(key)
 		if info == nil {
 			continue
 		}
 		snaps = append(snaps, enclave.BudgetSnapshot{
-			AdvertiserID: pos.ID,
+			AdvertiserID: key,
 			Total:        info.Total,
 			Spent:        info.Spent,
 			Currency:     info.Currency,

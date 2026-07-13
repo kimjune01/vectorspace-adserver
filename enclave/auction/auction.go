@@ -1,5 +1,7 @@
 package auction
 
+import "math"
+
 // validateBidPrices filters bids with invalid (non-positive) prices.
 func validateBidPrices(bids []CoreBid) (valid []CoreBid, rejectedBidIDs []string) {
 	validBids := make([]CoreBid, 0, len(bids))
@@ -52,8 +54,8 @@ func RunAuction(
 
 	// Build sorted scored bids list in rank order
 	var sortedScoredBids []ScoredBid
+	scoredByID := make(map[string]ScoredBid, len(scoredBids))
 	if len(scoredBids) > 0 {
-		scoredByID := make(map[string]ScoredBid, len(scoredBids))
 		for _, sb := range scoredBids {
 			scoredByID[sb.ID] = sb
 		}
@@ -65,12 +67,26 @@ func RunAuction(
 		}
 	}
 
+	// hasFiniteScore reports whether a bid is usable as winner or runner-up.
+	// A -Inf score means the bid matched nothing at this query point
+	// (e.g. a σ = 0 keyword bid away from its exact point).
+	hasFiniteScore := func(bid *CoreBid) bool {
+		if bid == nil {
+			return false
+		}
+		if len(scoredBids) == 0 {
+			return true // price-only ranking, no scores computed
+		}
+		sb, ok := scoredByID[bid.ID]
+		return ok && !math.IsInf(sb.Score, -1)
+	}
+
 	// Step 4: Extract winner and runner-up
 	var winner, runnerUp *CoreBid
-	if len(ranking.SortedBidders) > 0 {
+	if len(ranking.SortedBidders) > 0 && hasFiniteScore(ranking.HighestBids[ranking.SortedBidders[0]]) {
 		winner = ranking.HighestBids[ranking.SortedBidders[0]]
 	}
-	if len(ranking.SortedBidders) > 1 {
+	if winner != nil && len(ranking.SortedBidders) > 1 && hasFiniteScore(ranking.HighestBids[ranking.SortedBidders[1]]) {
 		runnerUp = ranking.HighestBids[ranking.SortedBidders[1]]
 	}
 
