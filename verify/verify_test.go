@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -18,10 +19,11 @@ import (
 // testPKI is a self-minted root -> intermediate -> leaf chain (all ECDSA P-384),
 // standing in for the AWS Nitro PKI so the verifier logic runs fully offline.
 type testPKI struct {
-	roots    *x509.CertPool
-	leafKey  *ecdsa.PrivateKey
-	leafDER  []byte
-	interDER []byte
+	roots          *x509.CertPool
+	leafKey        *ecdsa.PrivateKey
+	leafDER        []byte
+	interDER       []byte
+	attestedPubDER []byte // real RSA SPKI the enclave "attests"
 }
 
 func p384(t *testing.T) *ecdsa.PrivateKey {
@@ -88,7 +90,16 @@ func mintPKI(t *testing.T) testPKI {
 	roots := x509.NewCertPool()
 	roots.AddCert(rootCert)
 
-	return testPKI{roots: roots, leafKey: leafKey, leafDER: leafDER, interDER: interDER}
+	encKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("enc keygen: %v", err)
+	}
+	attestedPubDER, err := x509.MarshalPKIXPublicKey(&encKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal attested key: %v", err)
+	}
+
+	return testPKI{roots: roots, leafKey: leafKey, leafDER: leafDER, interDER: interDER, attestedPubDER: attestedPubDER}
 }
 
 func rawSig(r, s *big.Int) []byte {
@@ -138,7 +149,7 @@ func (pki testPKI) doc(nonce, pcr0 []byte, ts time.Time) attestationDoc {
 		PCRs:        map[uint][]byte{0: pcr0},
 		Certificate: pki.leafDER,
 		CABundle:    [][]byte{pki.interDER},
-		PublicKey:   []byte("attested-public-key-der"),
+		PublicKey:   pki.attestedPubDER,
 		UserData:    []byte("vectorspace/key-attestation/v1"),
 		Nonce:       nonce,
 	}
@@ -146,12 +157,12 @@ func (pki testPKI) doc(nonce, pcr0 []byte, ts time.Time) attestationDoc {
 
 func baseOpts(pki testPKI, nonce, pcr0 []byte) Options {
 	return Options{
-		Roots:         pki.roots,
-		ExpectedPCRs:  map[int][]byte{0: pcr0},
-		ExpectedNonce: nonce,
-		RequireNonce:  true,
-		Now:           time.Now(),
-		MaxAge:        5 * time.Minute,
+		Roots:            pki.roots,
+		ExpectedPCRs:     map[int][]byte{0: pcr0},
+		ExpectedNonce:    nonce,
+		ExpectedUserData: []byte("vectorspace/key-attestation/v1"),
+		Now:              time.Now(),
+		MaxAge:           5 * time.Minute,
 	}
 }
 
@@ -165,8 +176,8 @@ func TestVerify_valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid doc rejected: %v", err)
 	}
-	if string(v.PublicKey) != "attested-public-key-der" {
-		t.Fatalf("wrong public key: %q", v.PublicKey)
+	if _, err := x509.ParsePKIXPublicKey(v.PublicKey); err != nil {
+		t.Fatalf("attested key is not a valid SPKI: %v", err)
 	}
 	if string(v.UserData) != "vectorspace/key-attestation/v1" {
 		t.Fatalf("wrong user data: %q", v.UserData)
@@ -259,9 +270,36 @@ func TestVerify_requireNonceMissing(t *testing.T) {
 	docB64 := signDocWith(t, pki, pki.doc(nonce, pcr0, time.Now()), pki.leafKey)
 
 	opts := baseOpts(pki, nonce, pcr0)
-	opts.ExpectedNonce = nil // RequireNonce stays true
+	opts.ExpectedNonce = nil // nonce required by default
 	if _, err := Verify(docB64, opts); err == nil {
-		t.Fatal("RequireNonce with no ExpectedNonce accepted")
+		t.Fatal("missing ExpectedNonce accepted without InsecureSkipNonce")
+	}
+}
+
+func TestVerify_skipNonce(t *testing.T) {
+	pki := mintPKI(t)
+	nonce := []byte("verifier-challenge-32-bytes-xxxx")
+	pcr0 := make([]byte, 48)
+	docB64 := signDocWith(t, pki, pki.doc(nonce, pcr0, time.Now()), pki.leafKey)
+
+	opts := baseOpts(pki, nonce, pcr0)
+	opts.ExpectedNonce = nil
+	opts.InsecureSkipNonce = true // explicit opt-out
+	if _, err := Verify(docB64, opts); err != nil {
+		t.Fatalf("InsecureSkipNonce should allow a missing nonce: %v", err)
+	}
+}
+
+func TestVerify_wrongUserData(t *testing.T) {
+	pki := mintPKI(t)
+	nonce := []byte("verifier-challenge-32-bytes-xxxx")
+	pcr0 := make([]byte, 48)
+	docB64 := signDocWith(t, pki, pki.doc(nonce, pcr0, time.Now()), pki.leafKey)
+
+	opts := baseOpts(pki, nonce, pcr0)
+	opts.ExpectedUserData = []byte("some/other/protocol")
+	if _, err := Verify(docB64, opts); err == nil {
+		t.Fatal("wrong user_data accepted")
 	}
 }
 

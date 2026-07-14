@@ -41,9 +41,13 @@ type Options struct {
 	Roots         *x509.CertPool // trust anchors (production: the AWS Nitro root)
 	ExpectedPCRs  map[int][]byte // PCR index -> expected value; every entry must match
 	ExpectedNonce []byte         // verifier challenge; must equal doc.Nonce byte-for-byte
-	RequireNonce  bool           // if set, verification fails unless ExpectedNonce is provided
-	Now           time.Time      // reference time for freshness; zero => time.Now()
-	MaxAge        time.Duration  // reject if the doc timestamp is older than this; 0 => skip
+	// A nonce is required by default: verification fails if ExpectedNonce is empty,
+	// unless InsecureSkipNonce is set. This makes the replay-unsafe path an explicit
+	// opt-in rather than the silent Go zero-value default.
+	InsecureSkipNonce bool
+	ExpectedUserData  []byte        // if set, doc.UserData must equal it (protocol domain separation)
+	Now               time.Time     // reference time for freshness; zero => time.Now()
+	MaxAge            time.Duration // reject if the doc timestamp is older than this; 0 => skip
 }
 
 // Verified is the trusted content, returned only after every check passes.
@@ -83,8 +87,8 @@ func Verify(docB64 string, opts Options) (*Verified, error) {
 	if opts.Roots == nil {
 		return nil, errors.New("verify: Options.Roots is required")
 	}
-	if opts.RequireNonce && len(opts.ExpectedNonce) == 0 {
-		return nil, errors.New("verify: RequireNonce set but no ExpectedNonce provided")
+	if len(opts.ExpectedNonce) == 0 && !opts.InsecureSkipNonce {
+		return nil, errors.New("verify: no ExpectedNonce (challenge required; set InsecureSkipNonce to override)")
 	}
 
 	raw, err := base64.StdEncoding.DecodeString(docB64)
@@ -162,6 +166,13 @@ func Verify(docB64 string, opts Options) (*Verified, error) {
 	if len(opts.ExpectedNonce) > 0 {
 		if !bytesEqualConst(opts.ExpectedNonce, d.Nonce) {
 			return nil, errors.New("verify: nonce mismatch (possible replay)")
+		}
+	}
+
+	// UserData: enforce protocol domain separation when the caller pins it.
+	if opts.ExpectedUserData != nil {
+		if !bytesEqualConst(opts.ExpectedUserData, d.UserData) {
+			return nil, errors.New("verify: user_data mismatch")
 		}
 	}
 
