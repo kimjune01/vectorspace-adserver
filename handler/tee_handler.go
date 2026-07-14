@@ -58,6 +58,9 @@ func (h *TEEHandler) HandleAdRequestPrivate(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "encrypted_embedding is required", http.StatusBadRequest)
 		return
 	}
+	// TODO: also validate req.EncryptedEmbedding.Nonce != "" here and return 400.
+	// Currently a missing nonce isn't caught until decryption, surfacing as a 500
+	// instead of a clean client error. Deferred; see README "Known gaps".
 
 	resp, err := h.Proxy.RunAuction(&req)
 	if err != nil {
