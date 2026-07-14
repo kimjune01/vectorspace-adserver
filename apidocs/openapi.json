@@ -1,0 +1,3954 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VectorSpace Ad Server",
+    "version": "0.1.0",
+    "description": "HTTP API for the VectorSpace ad exchange. This spec is generated from the\nwired routes in `handler/routes.go` and the actual request/response code in\n`handler/*.go`, `platform/`, `enclave/types.go`, and `trust/types.go` \u2014 not\nfrom the README (the README has drifted from the code; see the client notes\nbelow).\n\nHonest deployment notes:\n- **TEE / attestation is a placeholder in the default (mock) deployment.**\n  `GET /tee/attestation` returns `attestation_cose_base64:\n  \"mock-attestation-not-for-production\"` plus a real RSA public-key PEM. The\n  default server runs `MockTEEProxy`, which decrypts the embedding **in the\n  exchange's own process**. Do not rely on the TEE privacy property until\n  real NSM attestation / vsock lands.\n- **`POST /ad-request` requires an encrypted envelope.** A plaintext\n  `embedding` field is rejected with `400`. Encrypt against the public key\n  from `GET /tee/attestation`.\n- **`POST /simulate` is the plaintext dev path** (admin-gated): plaintext\n  `intent`, no logging, no billing. `POST /openrtb2/auction` is the other\n  plaintext path (logged, billable), carrying the query the way OpenRTB\n  does.\n\nAuth:\n- Admin endpoints require the `X-Admin-Password` header. If the server was\n  started with an empty admin password (dev mode), the check is bypassed and\n  all requests pass \u2014 so a `401` from these endpoints means a password is\n  configured and yours was wrong or missing.\n- Portal endpoints authenticate with a `?token=` query parameter (advertiser\n  token from `/advertiser/register`; publisher token from\n  `/publisher/register`, `/admin/publishers`, or `/publisher/login`).\n- All other endpoints are open (no auth). Note `GET /stats` and\n  `DELETE /stats` are **unauthenticated** \u2014 DELETE resets the auction log.\n\nSeveral endpoints are only wired when the server has a database configured\n(the default). Endpoints marked \"requires DB\" below (events, portals, admin,\nstats, intake, publisher login/register) are absent otherwise. Trust\nendpoints are only wired when a trust ledger is configured.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local dev server (default listen address)"
+    },
+    {
+      "url": "https://ads.example.com",
+      "description": "Placeholder production URL"
+    }
+  ],
+  "tags": [
+    {
+      "name": "health"
+    },
+    {
+      "name": "advertiser"
+    },
+    {
+      "name": "publisher"
+    },
+    {
+      "name": "auction"
+    },
+    {
+      "name": "events"
+    },
+    {
+      "name": "portal-advertiser"
+    },
+    {
+      "name": "portal-publisher"
+    },
+    {
+      "name": "admin"
+    },
+    {
+      "name": "trust"
+    },
+    {
+      "name": "tee"
+    },
+    {
+      "name": "intake"
+    },
+    {
+      "name": "stats"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness probe",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "gitHash": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "gitHash"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/advertiser/register": {
+      "post": {
+        "tags": [
+          "advertiser"
+        ],
+        "summary": "Register an advertiser (intent position) or a keyword-import group",
+        "description": "`intent` and `keywords` are mutually exclusive; exactly one is required.\nFor intent positions, `sigma` must be > 0 (\u03c3 = 0 is the exact-match\nlimit and is only valid for keyword imports, where it is the default).\nReturns a per-advertiser access token when a DB is configured.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RegisterIntentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RegisterKeywordGroupResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/advertiser/{id}": {
+      "put": {
+        "tags": [
+          "advertiser"
+        ],
+        "summary": "Update an advertiser position",
+        "description": "Omitted fields keep their current value. `sigma` is a nullable/optional\nfield: omit to keep the existing \u03c3; an explicit `0` sets the keyword\nlimit. `budget` > 0 updates the shared budget (routed to the group head).\n",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AdvertiserIdPath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Position"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "advertiser"
+        ],
+        "summary": "Delete an advertiser (deleting a keyword-group head deletes the group)",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AdvertiserIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "deleted"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/positions": {
+      "get": {
+        "tags": [
+          "advertiser"
+        ],
+        "summary": "List all registered positions",
+        "description": "Returns the raw `Position` array. Note the `embedding` field is omitted\nfrom this serialization (JSON tag `-`); use `GET /embeddings` to fetch\nembeddings.\n",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Positions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Position"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/budget/{id}": {
+      "get": {
+        "tags": [
+          "advertiser"
+        ],
+        "summary": "Budget info for an advertiser",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Budget info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/embeddings": {
+      "get": {
+        "tags": [
+          "publisher"
+        ],
+        "summary": "All advertiser embeddings (ETag-cached, for SDK sync)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Embeddings",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "embeddings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EmbeddingEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "embeddings"
+                  ]
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified (ETag matched)"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/embed": {
+      "post": {
+        "tags": [
+          "publisher"
+        ],
+        "summary": "Embed arbitrary text via the embedding sidecar",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Embedding vector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "embedding": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "format": "double"
+                      }
+                    }
+                  },
+                  "required": [
+                    "embedding"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/simulate": {
+      "post": {
+        "tags": [
+          "auction"
+        ],
+        "summary": "Plaintext simulated auction (dev; no logging, no billing)",
+        "description": "Admin-gated via `X-Admin-Password`. Includes ALL advertisers regardless\nof budget. If `tau` > 0, only positions within that squared-Euclidean\ndistance of the query are included.\n",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "intent": {
+                    "type": "string"
+                  },
+                  "tau": {
+                    "type": "number",
+                    "format": "double",
+                    "default": 0
+                  }
+                },
+                "required": [
+                  "intent"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Simulation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "tags": [
+          "auction"
+        ],
+        "summary": "Proxy a chat completion to the Anthropic Messages API",
+        "description": "Server-side proxy. Requires the server to have an Anthropic API key\nconfigured, otherwise returns `503`. Upstream API failures surface as\n`502`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    }
+                  },
+                  "system": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "messages"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assistant reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "502": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "503": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/openrtb2/auction": {
+      "post": {
+        "tags": [
+          "auction"
+        ],
+        "summary": "OpenRTB 2.5 wire-format auction (plaintext interop path)",
+        "description": "Accepts a standard OpenRTB 2.5 BidRequest and returns a standard\nBidResponse. Two declared deviations from stock 2.5 semantics:\nsettlement is per-click VCG (`bid.price` = the amount charged if the\nplacement is clicked, `bid.ext.vectorspace.settlement = \"cpc-vcg\"`, and\n`imp.bidfloor` is per-click), and `adm` is a self-contained HTML snippet\nwhose click-through routes through `GET /click` (where the charge\nfires). No-bid returns `204` with no body (ORTB convention). Query point\nprecedence: `ext.vectorspace.embedding` \u2192 `ext.vectorspace.intent` \u2192\n`site/app.content.keywords` \u2192 `user.keywords` (comma-separated, each\nembedded and scored separately). `test=1` requests are never logged and\nnever billable.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ORTBBidRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "BidResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ORTBBidResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No bid (ORTB convention; empty body)"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/ad-request": {
+      "post": {
+        "tags": [
+          "tee"
+        ],
+        "summary": "Private auction \u2014 encrypted embedding envelope (TEE path)",
+        "description": "Receives an encrypted embedding, forwards it to the enclave, returns the\nauction outcome. A plaintext `embedding` field is rejected with `400`.\n`encrypted_embedding` requires `aes_key_encrypted`, `encrypted_payload`,\nand `nonce`; `hash_algorithm` is optional (defaults to SHA-256). The\nhandler validates key and payload explicitly (`400`); a missing `nonce`\ncurrently surfaces at decryption time. In the default mock deployment the\ndecrypt happens in-process (see TEE note in `info.description`).\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuctionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Auction outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/tee/attestation": {
+      "get": {
+        "tags": [
+          "tee"
+        ],
+        "summary": "Enclave public key + attestation document",
+        "description": "In the default mock deployment `attestation_cose_base64` is the literal\nplaceholder `\"mock-attestation-not-for-production\"` and `public_key` is a\nreal RSA PEM you can encrypt an `/ad-request` envelope against.\n",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Attestation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "503": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/event/impression": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Log an impression (frequency-capped when user_id is provided)",
+        "description": "Requires DB. Frequency-cap breach returns `429`.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatusOk"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "429": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/event/click": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Log a click (charges the winner's budget on first click)",
+        "description": "Requires DB. `auction_id` must be a real auction (> 0) whose winner\nmatches `advertiser_id`, else `400`. If the first-click budget charge\nfails (budget missing or exhausted) the response is `402`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatusOk"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "402": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/event/viewable": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Log a viewability event",
+        "description": "Requires DB.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatusOk"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/click": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Settlement redirect (charge on first click, then 302 to winner URL)",
+        "description": "Requires DB. Charges the winner's budget on the first click for the\nauction, logs it, then redirects (`302`) to the winner's URL. If the\nwinner has no URL, returns `200` with `{\"status\":\"ok\"}` instead.\n",
+        "security": [],
+        "parameters": [
+          {
+            "name": "auction_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatusOk"
+          },
+          "302": {
+            "description": "Redirect to the winning advertiser's URL"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "402": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/me": {
+      "get": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Advertiser profile + budget",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalMe"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Update advertiser profile",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Position"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/me/auctions": {
+      "get": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Auction history for the token's advertiser (JSON or CSV)",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "Set to `csv` for a CSV attachment (ignores limit/offset).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auctions (JSON) or CSV attachment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionsPage"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/me/events": {
+      "get": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Event stats for the token's advertiser",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/me/creatives": {
+      "get": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "List creatives for the token's advertiser",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Creatives",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Creative"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Create a creative",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created creative",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Creative"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/me/creatives/{id}": {
+      "put": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Update a creative owned by the token's advertiser",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated creative",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Creative"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "portal-advertiser"
+        ],
+        "summary": "Delete a creative owned by the token's advertiser",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/me": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Publisher profile",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publisher"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/stats": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Aggregate stats for the token's publisher",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/revenue": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Revenue over time for the token's publisher",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "$ref": "#/components/parameters/GroupBy"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revenue periods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenuePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/events": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Event stats for the token's publisher",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/auctions": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Auction history for the token's publisher",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auctions page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionsPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/portal/publisher/top-advertisers": {
+      "get": {
+        "tags": [
+          "portal-publisher"
+        ],
+        "summary": "Top advertisers by spend on the token's publisher",
+        "security": [
+          {
+            "PortalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Token"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Advertiser spend list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdvertiserSpend"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/publisher/register": {
+      "post": {
+        "tags": [
+          "publisher"
+        ],
+        "summary": "Register a publisher (admin-protected)",
+        "description": "Requires DB. Returns a publisher token.",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "domain": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created publisher",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "pub-1"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "domain",
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/publisher/login": {
+      "post": {
+        "tags": [
+          "publisher"
+        ],
+        "summary": "Authenticate a publisher by email/password",
+        "description": "Requires DB. Returns the publisher's token on success.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "publisher_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "publisher_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/auctions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "All auctions (audit trail; JSON or CSV)",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "name": "winner",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auctions page (JSON) or CSV attachment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuctionsPage"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/revenue": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Revenue analytics (grouped by day/week/month)",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GroupBy"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revenue periods",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenuePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/top-advertisers": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Top advertisers by total spend",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Advertiser spend list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdvertiserSpend"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/advertisers": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "All advertisers with budget data",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Advertisers with budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdvertiserWithBudget"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/events": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Aggregate event stats across all advertisers",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/admin/publishers": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List all publishers",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publishers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Publisher"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create a publisher with email/password credentials",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "domain": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created publisher",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "pub-1"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "domain",
+                    "email",
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Aggregate auction statistics",
+        "description": "Requires DB. **Unauthenticated** \u2014 no admin password is enforced on this\nroute.\n",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Reset (delete) all auction log entries",
+        "description": "Requires DB. **Unauthenticated** \u2014 this deletes the entire auction log.\n",
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Reset"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/intake": {
+      "get": {
+        "tags": [
+          "intake"
+        ],
+        "summary": "List intake submissions (admin-protected)",
+        "description": "Requires DB. GET is admin-gated via `X-Admin-Password`; POST is public.\n",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Submissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntakeSubmission"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "intake"
+        ],
+        "summary": "Submit an intake form (public)",
+        "description": "Requires DB. `type` must be `publisher` or `advertiser`.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "publisher",
+                      "advertiser"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "company": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "name",
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/graph": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Full public trust graph (append-only edge feed)",
+        "description": "Only wired when a trust ledger is configured.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Edges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustEdge"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "edges",
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/node/{addr}": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Trust info for a single address",
+        "security": [],
+        "parameters": [
+          {
+            "name": "addr",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node + its edges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "node": {
+                      "$ref": "#/components/schemas/TrustNode"
+                    },
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustEdge"
+                      }
+                    }
+                  },
+                  "required": [
+                    "node",
+                    "edges"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/attestation/{id}": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "A single attestation by id",
+        "security": [],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attestation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attestation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "404": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/log": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Append-only ledger log",
+        "security": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log entries (entry shape is ledger-internal; returned as an opaque array)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "log": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Ledger log entry; concrete shape not fixed by the HTTP layer."
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "log",
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/allowlist": {
+      "get": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Addresses meeting trust thresholds",
+        "security": [],
+        "parameters": [
+          {
+            "name": "min_edges",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "min_bilateral",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trusted addresses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "addrs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustNode"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "criteria": {
+                      "type": "object",
+                      "properties": {
+                        "min_edges": {
+                          "type": "integer"
+                        },
+                        "min_bilateral": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "addrs",
+                    "count",
+                    "criteria"
+                  ]
+                }
+              }
+            }
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/attest": {
+      "post": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Submit / confirm / revoke an attestation over HTTP (admin-protected)",
+        "description": "Admin-gated. Simulates the DKIM-signed email flow for dev. The body is a\nfree-form JSON object; the fields read depend on `action`. HTTP\nsubmissions are never marked DKIM-verified. Common shapes:\n- New attestation (no `action`): requires `sender_email`,\n  `attestation_id`, `attestation_type`, `subject`. Returns `201`.\n- `action: \"confirm\"`: requires `sender_email`, `attestation_id`.\n- `action: \"revoke\"`: requires `sender_email`, `attestation_id`,\n  optional `reason`.\n",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrustAttestSubmit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmed or revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "confirmed",
+                        "revoked"
+                      ]
+                    },
+                    "attestation_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "attestation_id"
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New attestation recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "attestation_id": {
+                      "type": "string"
+                    },
+                    "edge_kind": {
+                      "type": "string",
+                      "enum": [
+                        "bilateral",
+                        "unilateral"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "attestation_id",
+                    "edge_kind"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    },
+    "/trust/publish": {
+      "put": {
+        "tags": [
+          "trust"
+        ],
+        "summary": "Set field publish preferences for a subject (admin-protected)",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishPreference"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatusOk"
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "405": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "500": {
+            "$ref": "#/components/responses/PlainTextError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AdminPassword": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Admin-Password",
+        "description": "Admin password header. If the server was started with an empty admin\npassword (dev mode), the check is skipped and any request passes.\n"
+      },
+      "PortalToken": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "Advertiser or publisher access token, passed as the `token` query\nparameter. Advertiser tokens come from `/advertiser/register`; publisher\ntokens from `/publisher/register`, `/admin/publishers`, or\n`/publisher/login`.\n"
+      }
+    },
+    "parameters": {
+      "AdvertiserIdPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Advertiser/position id (e.g. `adv-1`).",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Token": {
+        "name": "token",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Page size (server default applies when 0/absent; typically 20).",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "GroupBy": {
+        "name": "group_by",
+        "in": "query",
+        "required": false,
+        "description": "Aggregation bucket. Defaults to `day`.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month"
+          ],
+          "default": "day"
+        }
+      }
+    },
+    "responses": {
+      "PlainTextError": {
+        "description": "Error. Body is a plain-text message from Go's `http.Error` (a\n`text/plain` line), not JSON.\n",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "StatusOk": {
+        "description": "OK",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "example": "ok"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "description": "Register either an intent position (`intent` + `sigma` > 0) or a keyword\ngroup (`keywords` + optional `sigma`, default 0). The two are mutually\nexclusive.\n",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string",
+            "description": "Natural-language positioning statement (mutually exclusive with keywords)."
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One position per keyword, sharing one budget (\u03c3 defaults to 0)."
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string",
+            "default": "USD"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "bid_price",
+          "budget"
+        ]
+      },
+      "RegisterIntentResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "adv-1"
+          },
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Present only when a DB is configured."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "intent",
+          "sigma",
+          "bid_price",
+          "currency",
+          "url"
+        ]
+      },
+      "RegisterKeywordGroupResponse": {
+        "type": "object",
+        "properties": {
+          "budget_id": {
+            "type": "string",
+            "description": "Group head id; holds the shared budget."
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "keyword": {
+                  "type": "string",
+                  "description": "The keyword (stored in the position's intent field)."
+                },
+                "sigma": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "bid_price": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "budget_id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "token": {
+            "type": "string",
+            "description": "Present only when a DB is configured."
+          }
+        },
+        "required": [
+          "budget_id",
+          "positions"
+        ]
+      },
+      "UpdateRequest": {
+        "type": "object",
+        "description": "Partial update. Omitted string fields keep their current value. `sigma`\nis nullable: omit to keep the existing \u03c3, send `0` for the keyword\nlimit. `budget` > 0 updates the shared budget.\n",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "sigma": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget": {
+            "type": "number",
+            "format": "double"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "Position": {
+        "type": "object",
+        "description": "Registered advertiser position. The embedding vector is intentionally\nomitted from this serialization.\n",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "budget_id": {
+            "type": "string",
+            "description": "Set on keyword-group members; points at the group head."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "intent",
+          "sigma",
+          "bid_price",
+          "currency",
+          "url"
+        ]
+      },
+      "BudgetInfo": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number",
+            "format": "double"
+          },
+          "spent": {
+            "type": "number",
+            "format": "double"
+          },
+          "remaining": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "total",
+          "spent",
+          "remaining",
+          "currency"
+        ]
+      },
+      "EmbeddingEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "embedding",
+          "bid_price",
+          "sigma",
+          "currency"
+        ]
+      },
+      "SimulationResult": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string"
+          },
+          "winner": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BidderDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "all_bidders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BidderDetail"
+            }
+          },
+          "payment": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_count": {
+            "type": "integer"
+          },
+          "tau_thresholds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tau": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "tau",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "intent",
+          "all_bidders",
+          "payment",
+          "bid_count",
+          "tau_thresholds"
+        ]
+      },
+      "BidderDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "score": {
+            "type": "number",
+            "format": "double"
+          },
+          "distance_sq": {
+            "type": "number",
+            "format": "double"
+          },
+          "log_bid": {
+            "type": "number",
+            "format": "double"
+          },
+          "click_url": {
+            "type": "string"
+          },
+          "ad_title": {
+            "type": "string"
+          },
+          "ad_subtitle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rank",
+          "name",
+          "intent",
+          "bid_price",
+          "sigma",
+          "score",
+          "distance_sq",
+          "log_bid"
+        ]
+      },
+      "EventRequest": {
+        "type": "object",
+        "description": "`advertiser_id` is always required. `auction_id` is required (> 0) for\n`/event/click`; for impression/viewable it may be 0.\n",
+        "properties": {
+          "auction_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "advertiser_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "publisher_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "AuctionRequest": {
+        "type": "object",
+        "description": "Private-auction request. Send `encrypted_embedding`; a top-level\nplaintext `embedding` is rejected with `400`.\n",
+        "properties": {
+          "encrypted_embedding": {
+            "$ref": "#/components/schemas/EncryptedEmbedding"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "Rejected if non-empty (plaintext not accepted)."
+          },
+          "tau": {
+            "type": "number",
+            "format": "double"
+          },
+          "publisher_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "encrypted_embedding"
+        ]
+      },
+      "EncryptedEmbedding": {
+        "type": "object",
+        "properties": {
+          "aes_key_encrypted": {
+            "type": "string",
+            "description": "RSA-encrypted AES key. Required (non-empty)."
+          },
+          "encrypted_payload": {
+            "type": "string",
+            "description": "AES-encrypted embedding payload. Required (non-empty)."
+          },
+          "nonce": {
+            "type": "string",
+            "description": "AES-GCM nonce. Required \u2014 decryption fails without it."
+          },
+          "hash_algorithm": {
+            "type": "string",
+            "description": "Optional; defaults to SHA-256."
+          }
+        },
+        "required": [
+          "aes_key_encrypted",
+          "encrypted_payload",
+          "nonce"
+        ]
+      },
+      "AdRequestResponse": {
+        "type": "object",
+        "properties": {
+          "auction_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "winner_id": {
+            "type": "string"
+          },
+          "payment": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "bid_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auction_id",
+          "winner_id",
+          "payment",
+          "currency",
+          "bid_count"
+        ]
+      },
+      "AttestationResponse": {
+        "type": "object",
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "description": "RSA public key PEM to encrypt an `/ad-request` envelope against."
+          },
+          "attestation_cose_base64": {
+            "type": "string",
+            "description": "COSE attestation, base64. In the mock deployment this is the literal\nstring `mock-attestation-not-for-production`.\n"
+          }
+        },
+        "required": [
+          "public_key",
+          "attestation_cose_base64"
+        ]
+      },
+      "Creative": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "advertiser_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Present on list reads; omitted on create/update echoes."
+          }
+        },
+        "required": [
+          "id",
+          "advertiser_id",
+          "title",
+          "subtitle",
+          "active"
+        ]
+      },
+      "PortalMe": {
+        "type": "object",
+        "description": "Advertiser profile plus budget fields (budget fields present when a budget exists).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "budget_total": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget_spent": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget_remaining": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "intent",
+          "sigma",
+          "bid_price",
+          "currency",
+          "url"
+        ]
+      },
+      "AuctionRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "winner_id": {
+            "type": "string"
+          },
+          "winner_name": {
+            "type": "string"
+          },
+          "payment": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "bid_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "intent",
+          "winner_id",
+          "winner_name",
+          "payment",
+          "currency",
+          "bid_count",
+          "created_at"
+        ]
+      },
+      "AuctionsPage": {
+        "type": "object",
+        "properties": {
+          "auctions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuctionRow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auctions",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "EventStats": {
+        "type": "object",
+        "properties": {
+          "impressions": {
+            "type": "integer"
+          },
+          "clicks": {
+            "type": "integer"
+          },
+          "viewable": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "impressions",
+          "clicks",
+          "viewable"
+        ]
+      },
+      "Stats": {
+        "type": "object",
+        "properties": {
+          "auction_count": {
+            "type": "integer"
+          },
+          "total_spend": {
+            "type": "number",
+            "format": "double"
+          },
+          "publisher_revenue": {
+            "type": "number",
+            "format": "double"
+          },
+          "exchange_revenue": {
+            "type": "number",
+            "format": "double"
+          },
+          "advertiser_count": {
+            "type": "integer"
+          },
+          "publisher_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auction_count",
+          "total_spend",
+          "publisher_revenue",
+          "exchange_revenue",
+          "advertiser_count",
+          "publisher_count"
+        ]
+      },
+      "RevenuePeriod": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "auction_count": {
+            "type": "integer"
+          },
+          "total_spend": {
+            "type": "number",
+            "format": "double"
+          },
+          "publisher_revenue": {
+            "type": "number",
+            "format": "double"
+          },
+          "exchange_revenue": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": [
+          "period",
+          "auction_count",
+          "total_spend",
+          "publisher_revenue",
+          "exchange_revenue"
+        ]
+      },
+      "RevenuePage": {
+        "type": "object",
+        "properties": {
+          "group_by": {
+            "type": "string"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenuePeriod"
+            }
+          }
+        },
+        "required": [
+          "group_by",
+          "periods"
+        ]
+      },
+      "AdvertiserSpend": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "total_spend": {
+            "type": "number",
+            "format": "double"
+          },
+          "auction_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "name",
+          "total_spend",
+          "auction_count"
+        ]
+      },
+      "AdvertiserWithBudget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "sigma": {
+            "type": "number",
+            "format": "double"
+          },
+          "bid_price": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget_total": {
+            "type": "number",
+            "format": "double"
+          },
+          "budget_spent": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "intent",
+          "sigma",
+          "bid_price",
+          "budget_total",
+          "budget_spent",
+          "currency",
+          "url"
+        ]
+      },
+      "Publisher": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "domain",
+          "created_at"
+        ]
+      },
+      "PublisherStats": {
+        "type": "object",
+        "properties": {
+          "auction_count": {
+            "type": "integer"
+          },
+          "total_revenue": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "auction_count",
+          "total_revenue",
+          "currency"
+        ]
+      },
+      "IntakeSubmission": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "email",
+          "company",
+          "detail",
+          "description",
+          "created_at"
+        ]
+      },
+      "ORTBBidRequest": {
+        "type": "object",
+        "description": "Subset of OpenRTB 2.5 BidRequest that this exchange reads. Fields not\nlisted are accepted but ignored. `id` and `imp[0].id` are required.\n",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "imp": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "bidfloor": {
+                  "type": "number",
+                  "format": "double",
+                  "description": "Per-click floor (VCG unit), not CPM."
+                },
+                "ext": {
+                  "$ref": "#/components/schemas/ORTBExt"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "site": {
+            "$ref": "#/components/schemas/ORTBSite"
+          },
+          "app": {
+            "$ref": "#/components/schemas/ORTBSite"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "keywords": {
+                "type": "string"
+              }
+            }
+          },
+          "cur": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Allowed currencies. Empty is treated as [USD]."
+          },
+          "test": {
+            "type": "integer",
+            "description": "1 = test request; never logged, never billable."
+          },
+          "ext": {
+            "$ref": "#/components/schemas/ORTBExt"
+          }
+        },
+        "required": [
+          "id",
+          "imp"
+        ]
+      },
+      "ORTBSite": {
+        "type": "object",
+        "description": "Used for both `site` and `app`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "keywords": {
+                "type": "string",
+                "description": "Comma-separated; each keyword embedded and scored separately."
+              }
+            }
+          },
+          "publisher": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ORTBExt": {
+        "type": "object",
+        "properties": {
+          "vectorspace": {
+            "type": "object",
+            "properties": {
+              "embedding": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "intent": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ORTBBidResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cur": {
+            "type": "string"
+          },
+          "seatbid": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seat": {
+                  "type": "string"
+                },
+                "bid": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ORTBBid"
+                  }
+                }
+              },
+              "required": [
+                "bid"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "seatbid"
+        ]
+      },
+      "ORTBBid": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "impid": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number",
+            "format": "double",
+            "description": "Amount charged if clicked (per-click VCG), not CPM."
+          },
+          "adid": {
+            "type": "string"
+          },
+          "adm": {
+            "type": "string",
+            "description": "Self-contained HTML anchor whose href routes through GET /click."
+          },
+          "adomain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ext": {
+            "type": "object",
+            "description": "Carries `vectorspace.{auction_id, advertiser, sigma, score,\nclick_url, ad_title, ad_subtitle, settlement}`; `settlement` is\nalways `\"cpc-vcg\"`.\n",
+            "properties": {
+              "vectorspace": {
+                "type": "object",
+                "properties": {
+                  "auction_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "advertiser": {
+                    "type": "string"
+                  },
+                  "sigma": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "score": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "click_url": {
+                    "type": "string"
+                  },
+                  "ad_title": {
+                    "type": "string"
+                  },
+                  "ad_subtitle": {
+                    "type": "string"
+                  },
+                  "settlement": {
+                    "type": "string",
+                    "enum": [
+                      "cpc-vcg"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "impid",
+          "price"
+        ]
+      },
+      "TrustEdge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "attestation_id": {
+            "type": "string"
+          },
+          "from_addr": {
+            "type": "string"
+          },
+          "to_addr": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bilateral",
+              "unilateral"
+            ]
+          },
+          "attestation_type": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "format": "double"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "attestation_id",
+          "from_addr",
+          "to_addr",
+          "kind",
+          "attestation_type",
+          "weight",
+          "created_at"
+        ]
+      },
+      "TrustNode": {
+        "type": "object",
+        "properties": {
+          "addr": {
+            "type": "string"
+          },
+          "edge_count": {
+            "type": "integer"
+          },
+          "bilateral_count": {
+            "type": "integer"
+          },
+          "unilateral_count": {
+            "type": "integer"
+          },
+          "oldest_edge": {
+            "type": "string"
+          },
+          "newest_edge": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "addr",
+          "edge_count",
+          "bilateral_count",
+          "unilateral_count",
+          "oldest_edge",
+          "newest_edge"
+        ]
+      },
+      "Attestation": {
+        "type": "object",
+        "properties": {
+          "attestation_id": {
+            "type": "string"
+          },
+          "attestation_type": {
+            "type": "string"
+          },
+          "attestor_email": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed",
+              "revoked"
+            ]
+          },
+          "edge_kind": {
+            "type": "string",
+            "enum": [
+              "bilateral",
+              "unilateral"
+            ]
+          },
+          "dkim_verified": {
+            "type": "boolean"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "published_fields": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "attestation_id",
+          "attestation_type",
+          "attestor_email",
+          "subject",
+          "status",
+          "edge_kind",
+          "dkim_verified",
+          "payload",
+          "published_fields",
+          "received_at"
+        ]
+      },
+      "TrustAttestSubmit": {
+        "type": "object",
+        "description": "Free-form attestation submission. `sender_email` is always required.\n`action` selects the operation; extra fields are captured into the\nstored payload.\n",
+        "additionalProperties": true,
+        "properties": {
+          "sender_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "revoke"
+            ]
+          },
+          "attestation_id": {
+            "type": "string"
+          },
+          "attestation_type": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PublishPreference": {
+        "type": "object",
+        "properties": {
+          "subject_email": {
+            "type": "string",
+            "format": "email"
+          },
+          "publish": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "redact": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "subject_email"
+        ]
+      }
+    }
+  }
+}

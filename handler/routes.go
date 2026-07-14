@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"vectorspace/apidocs"
 	"vectorspace/platform"
 	"vectorspace/tee"
 	"vectorspace/trust"
@@ -95,6 +96,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "gitHash": gitHash})
 	})
+
+	// Self-describing API: /openapi.json + /openapi.yaml (agents) and /docs (humans).
+	apidocs.Register(mux)
 
 	mux.HandleFunc("/advertiser/register", advHandler.HandleRegister)
 	mux.HandleFunc("/advertiser/", advHandler.HandleAdvertiser)

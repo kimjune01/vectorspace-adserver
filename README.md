@@ -60,7 +60,7 @@ cd portal && pnpm dev
 
 ## API
 
-Full machine-readable surface: [`openapi.yaml`](openapi.yaml). The list below is a guide; the spec is authoritative.
+Full machine-readable surface: [`apidocs/openapi.yaml`](apidocs/openapi.yaml). The running server serves it at `GET /openapi.json` and `GET /openapi.yaml`, with a rendered reference at `GET /docs` (Redoc, vendored — no CDN). Point an agent at `/openapi.json` to generate a client. The list below is a guide; the spec is authoritative.
 
 ### Publisher
 - `POST /ad-request` — Private auction path. Body is an **encrypted envelope**: `{encrypted_embedding: {aes_key_encrypted, encrypted_payload, nonce, hash_algorithm?}, publisher_id?, tau?}` (`hash_algorithm` defaults to SHA-256; all three of key, payload, and nonce are required or decryption fails). Plaintext embeddings are rejected with `400`. Encrypt against the key from `GET /tee/attestation`. (For a plaintext auction in local dev, use `POST /simulate` or `POST /openrtb2/auction` — see below.)

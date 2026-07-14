@@ -79,5 +79,12 @@ deploy: ## Deploy infrastructure to AWS
 clean: ## Remove build artifacts
 	rm -rf bin/ portal/dist/ landing/dist/
 
+openapi-json: ## Regenerate apidocs/openapi.json from apidocs/openapi.yaml (run after editing the yaml)
+	python3 -c "import yaml, json; json.dump(yaml.safe_load(open('apidocs/openapi.yaml')), open('apidocs/openapi.json', 'w'), indent=2)"
+
+openapi-check: ## Fail if apidocs/openapi.json is stale vs the yaml (for CI)
+	@python3 -c "import yaml, json; json.dump(yaml.safe_load(open('apidocs/openapi.yaml')), open('/tmp/openapi.check.json','w'), indent=2)"
+	@diff -q /tmp/openapi.check.json apidocs/openapi.json >/dev/null && echo "openapi.json up to date" || (echo "STALE: run 'make openapi-json'"; exit 1)
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
