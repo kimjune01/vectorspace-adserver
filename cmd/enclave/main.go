@@ -40,6 +40,7 @@ func main() {
 		log.Fatalf("enclave: keygen: %v", err)
 	}
 	log.Println("enclave: RSA-2048 keypair generated")
+	log.Printf("enclave: attestation mode: %s", attestationMode)
 
 	positions := enclave.NewPositionStore()
 	budgets := enclave.NewBudgetStore()
@@ -79,11 +80,17 @@ func handleConn(conn net.Conn, km *enclave.KeyManager, positions *enclave.Positi
 		enc.Encode(response{Type: "pong"})
 
 	case "key_request":
+		att, err := generateAttestation(km)
+		if err != nil {
+			// Fail closed: never hand back a key without an attestation.
+			enc.Encode(response{Type: "error", Error: fmt.Sprintf("attestation: %v", err)})
+			return
+		}
 		enc.Encode(response{
 			Type: "key_response",
 			Payload: enclave.AttestationResponse{
 				PublicKey:      km.PublicKeyPEM(),
-				AttestationB64: generateAttestation(km),
+				AttestationB64: att,
 			},
 		})
 
@@ -121,19 +128,4 @@ func handleConn(conn net.Conn, km *enclave.KeyManager, positions *enclave.Positi
 	default:
 		enc.Encode(response{Type: "error", Error: fmt.Sprintf("unknown message type: %s", msg.Type)})
 	}
-}
-
-// generateAttestation returns a base64-encoded COSE attestation document.
-// On a real Nitro Enclave, this calls the NSM device via github.com/hf/nsm.
-// Outside an enclave (dev/test), returns a placeholder.
-func generateAttestation(km *enclave.KeyManager) string {
-	// Phase 2b: Use github.com/hf/nsm to generate real attestation:
-	//
-	//   sess, _ := nsm.OpenDefaultSession()
-	//   defer sess.Close()
-	//   res, _ := sess.Send(&request.Attestation{
-	//       PublicKey: pubKeyDER,
-	//   })
-	//   return base64.StdEncoding.EncodeToString(res.Attestation.Document)
-	return "placeholder-attestation-not-for-production"
 }
