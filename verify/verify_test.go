@@ -284,9 +284,55 @@ func TestVerify_skipNonce(t *testing.T) {
 
 	opts := baseOpts(pki, nonce, pcr0)
 	opts.ExpectedNonce = nil
-	opts.InsecureSkipNonce = true // explicit opt-out
+	opts.InsecureSkipNonce = true // explicit opt-out; baseOpts sets MaxAge > 0
 	if _, err := Verify(docB64, opts); err != nil {
-		t.Fatalf("InsecureSkipNonce should allow a missing nonce: %v", err)
+		t.Fatalf("InsecureSkipNonce with MaxAge should allow a missing nonce: %v", err)
+	}
+}
+
+func TestVerify_skipNonceRequiresMaxAge(t *testing.T) {
+	pki := mintPKI(t)
+	nonce := []byte("verifier-challenge-32-bytes-xxxx")
+	pcr0 := make([]byte, 48)
+	docB64 := signDocWith(t, pki, pki.doc(nonce, pcr0, time.Now()), pki.leafKey)
+
+	opts := baseOpts(pki, nonce, pcr0)
+	opts.ExpectedNonce = nil
+	opts.InsecureSkipNonce = true
+	opts.MaxAge = 0 // skipping the challenge AND freshness must be refused
+	if _, err := Verify(docB64, opts); err == nil {
+		t.Fatal("InsecureSkipNonce with MaxAge=0 accepted (no replay defense)")
+	}
+}
+
+func TestAttestedRSAKey(t *testing.T) {
+	pki := mintPKI(t)
+	nonce := []byte("verifier-challenge-32-bytes-xxxx")
+	pcr0 := make([]byte, 48)
+	docB64 := signDocWith(t, pki, pki.doc(nonce, pcr0, time.Now()), pki.leafKey)
+
+	// Valid: returns the attested RSA key (never a sibling key).
+	key, err := AttestedRSAKey(docB64, baseOpts(pki, nonce, pcr0))
+	if err != nil {
+		t.Fatalf("valid attestation rejected: %v", err)
+	}
+	if key.Size() != 256 { // RSA-2048
+		t.Fatalf("attested key size %d bytes (want 256)", key.Size())
+	}
+
+	// Timestamp-freshness posture (Option B): no challenge, explicit skip + MaxAge.
+	optsB := baseOpts(pki, nonce, pcr0)
+	optsB.ExpectedNonce = nil
+	optsB.InsecureSkipNonce = true
+	if _, err := AttestedRSAKey(docB64, optsB); err != nil {
+		t.Fatalf("timestamp-freshness posture rejected valid doc: %v", err)
+	}
+
+	// A failed attestation yields no key.
+	bad := baseOpts(pki, nonce, pcr0)
+	bad.Roots = mintPKI(t).roots
+	if _, err := AttestedRSAKey(docB64, bad); err == nil {
+		t.Fatal("returned a key from an unverifiable attestation")
 	}
 }
 

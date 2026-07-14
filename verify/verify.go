@@ -18,6 +18,7 @@ package verify
 
 import (
 	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
@@ -89,6 +90,11 @@ func Verify(docB64 string, opts Options) (*Verified, error) {
 	}
 	if len(opts.ExpectedNonce) == 0 && !opts.InsecureSkipNonce {
 		return nil, errors.New("verify: no ExpectedNonce (challenge required; set InsecureSkipNonce to override)")
+	}
+	if opts.InsecureSkipNonce && opts.MaxAge <= 0 {
+		// Skipping the challenge leaves timestamp freshness as the only replay
+		// defense, so it must be bounded — otherwise an ancient document verifies.
+		return nil, errors.New("verify: InsecureSkipNonce requires MaxAge > 0 (bounded timestamp freshness)")
 	}
 
 	raw, err := base64.StdEncoding.DecodeString(docB64)
@@ -211,6 +217,47 @@ func Verify(docB64 string, opts Options) (*Verified, error) {
 		UserData:  d.UserData,
 		Nonce:     d.Nonce,
 	}, nil
+}
+
+// AttestedRSAKey verifies a Nitro attestation document and returns the RSA
+// public key it attests, parsed and ready to encrypt to.
+//
+// It reads the key ONLY from inside the verified document. Callers must encrypt
+// to this returned key and never to a public key delivered alongside the
+// attestation out of band (e.g. a PEM field in the same response): if you verify
+// one key and encrypt to another, the attestation proves nothing, because an
+// attacker who controls the transport can swap the sibling key. Using this
+// helper makes that mistake impossible by construction.
+//
+// For the timestamp-freshness deployment (no verifier challenge), pass
+// InsecureSkipNonce with a nonzero MaxAge; for challenge-response, pass
+// ExpectedNonce.
+//
+// Integrator requirements (this helper enforces the first two structurally):
+//   - Encrypt only to the returned key; never to a public_key delivered beside
+//     the attestation (e.g. the PEM in /tee/attestation).
+//   - Treat any error here as fatal: never fall back to the sibling key or to
+//     mock mode.
+//   - Pin the authentic AWS Nitro root (opts.Roots), the expected PCR set
+//     (opts.ExpectedPCRs), and opts.ExpectedUserData. This package ships none of
+//     those production values.
+//   - Under timestamp freshness (InsecureSkipNonce), use a trustworthy clock and
+//     understand that replay is possible within MaxAge; it proves no per-request
+//     liveness.
+func AttestedRSAKey(docB64 string, opts Options) (*rsa.PublicKey, error) {
+	v, err := Verify(docB64, opts)
+	if err != nil {
+		return nil, err
+	}
+	pub, err := x509.ParsePKIXPublicKey(v.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("verify: attested key parse: %w", err)
+	}
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("verify: attested key is not RSA")
+	}
+	return rsaPub, nil
 }
 
 // decodeCOSESign1 unwraps the CBOR tag-18 (COSE_Sign1) that real NSM documents
