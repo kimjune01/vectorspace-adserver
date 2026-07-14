@@ -1958,8 +1958,12 @@
           "stats"
         ],
         "summary": "Aggregate auction statistics",
-        "description": "Requires DB. **Unauthenticated** \u2014 no admin password is enforced on this\nroute.\n",
-        "security": [],
+        "description": "Requires DB. Admin-gated (`X-Admin-Password`); in dev (empty admin\npassword) the check is bypassed.\n",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Stats",
@@ -1970,6 +1974,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
           },
           "405": {
             "$ref": "#/components/responses/PlainTextError"
@@ -1984,11 +1991,18 @@
           "stats"
         ],
         "summary": "Reset (delete) all auction log entries",
-        "description": "Requires DB. **Unauthenticated** \u2014 this deletes the entire auction log.\n",
-        "security": [],
+        "description": "Requires DB. Admin-gated (`X-Admin-Password`) \u2014 resets the entire auction\nlog; in dev (empty admin password) the check is bypassed.\n",
+        "security": [
+          {
+            "AdminPassword": []
+          }
+        ],
         "responses": {
           "204": {
             "description": "Reset"
+          },
+          "401": {
+            "$ref": "#/components/responses/PlainTextError"
           },
           "405": {
             "$ref": "#/components/responses/PlainTextError"

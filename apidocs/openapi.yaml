@@ -1000,25 +1000,30 @@ paths:
       tags: [stats]
       summary: Aggregate auction statistics
       description: |
-        Requires DB. **Unauthenticated** — no admin password is enforced on this
-        route.
-      security: []
+        Requires DB. Admin-gated (`X-Admin-Password`); in dev (empty admin
+        password) the check is bypassed.
+      security:
+        - AdminPassword: []
       responses:
         "200":
           description: Stats
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Stats" }
+        "401": { $ref: "#/components/responses/PlainTextError" }
         "405": { $ref: "#/components/responses/PlainTextError" }
         "500": { $ref: "#/components/responses/PlainTextError" }
     delete:
       tags: [stats]
       summary: Reset (delete) all auction log entries
       description: |
-        Requires DB. **Unauthenticated** — this deletes the entire auction log.
-      security: []
+        Requires DB. Admin-gated (`X-Admin-Password`) — resets the entire auction
+        log; in dev (empty admin password) the check is bypassed.
+      security:
+        - AdminPassword: []
       responses:
         "204": { description: Reset }
+        "401": { $ref: "#/components/responses/PlainTextError" }
         "405": { $ref: "#/components/responses/PlainTextError" }
         "500": { $ref: "#/components/responses/PlainTextError" }
 

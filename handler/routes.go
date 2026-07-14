@@ -176,11 +176,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	if cfg.DB != nil {
 		db := cfg.DB
-		// TODO(auth): /stats is unauthenticated. GET leaks aggregate stats and
-		// DELETE wipes the auction log via ResetStats — open to anyone. Gate both
-		// behind adminAuthMiddleware before any non-dev deployment. Deferred; see
-		// README "Known gaps".
-		mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		// /stats is admin-gated: GET returns aggregate stats, DELETE resets the
+		// auction log. In dev (empty admin password) adminAuthMiddleware passes
+		// through, matching the other admin endpoints.
+		mux.HandleFunc("/stats", adminAuthMiddleware(cfg.AdminPassword, func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
 				stats, err := db.GetStats()
@@ -199,7 +198,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
-		})
+		}))
 	}
 
 	// Trust graph / attestation exchange endpoints

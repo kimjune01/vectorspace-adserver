@@ -127,7 +127,6 @@ Two phases (full detail in [PRIVACY.md](PRIVACY.md)).
 
 Flagged here so scrutiny finds them stated rather than hidden. In rough priority:
 
-- **`/stats` is unauthenticated** — `GET` leaks stats, `DELETE` wipes the auction log. TODO in `handler/routes.go`; gate behind `adminAuthMiddleware` before any non-dev deploy.
 - **Missing `nonce` → 500, not 400** — `/ad-request` validates key and payload but not nonce; an absent nonce fails at decryption. TODO in `handler/tee_handler.go`.
 - **TEE attestation: components implemented behind `nitro`, not integrated or hardware-validated** — real NSM attestation, vsock, and a reference verifier now exist (see Privacy), but they are not wired into an end-to-end flow: the web SDK still encrypts to the unverified `public_key` rather than the attested key, no production AWS root/PCR policy is pinned, and nothing has run against a real captured attestation on EC2 Nitro. The default build still decrypts in-process. The `nitro` target adds `hf/nsm` + `mdlayher/vsock` deps (the default build and the standalone enclave package stay stdlib-only). The standalone enclave repo also needs its listener/attestation synced with the adserver's vendored copy so the crosscheck guards the attested binary.
 - **No mechanized code↔Lean correspondence** — the auction is matched to the verified model by inspection, not extraction (see Formal verification).
