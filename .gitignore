@@ -33,5 +33,8 @@ DerivedData/
 skill/*.md
 skill/test/results/
 
-# Env
+# Env — real secrets stay local; .env.example and portal/.env.* (public build config) are committed
 .env
+.env.local
+.env.*.local
+!.env.example
